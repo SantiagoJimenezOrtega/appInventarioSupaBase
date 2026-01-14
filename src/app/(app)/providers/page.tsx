@@ -33,7 +33,7 @@ export default function ProvidersPage() {
     const [searchTerm, setSearchTerm] = useState("");
 
     const form = useForm<z.infer<typeof providerSchema>>({
-        resolver: zodResolver(providerSchema),
+        resolver: zodResolver(providerSchema) as any,
         defaultValues: {
             name: "",
             contact_person: "",

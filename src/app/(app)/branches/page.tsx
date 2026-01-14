@@ -32,7 +32,7 @@ export default function BranchesPage() {
     const [searchTerm, setSearchTerm] = useState("");
 
     const form = useForm<z.infer<typeof branchSchema>>({
-        resolver: zodResolver(branchSchema),
+        resolver: zodResolver(branchSchema) as any,
         defaultValues: {
             name: "",
             location: "",

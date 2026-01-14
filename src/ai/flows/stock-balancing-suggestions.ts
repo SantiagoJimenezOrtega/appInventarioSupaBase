@@ -1,4 +1,4 @@
-import { defineFlow, z } from '@genkit-ai/ai';
+import { z } from 'genkit';
 import { ai } from '../genkit';
 
 const SuggestionSchema = z.object({
@@ -9,24 +9,28 @@ const SuggestionSchema = z.object({
     reason: z.string()
 });
 
-export const stockBalancingSuggestionsFlow = defineFlow(
+const InputSchema = z.object({
+    branches: z.array(z.object({
+        branchId: z.string(),
+        branchName: z.string(),
+        stockLevels: z.string(),
+        recentSales: z.string()
+    })),
+    products: z.array(z.object({
+        productId: z.string(),
+        productName: z.string()
+    }))
+});
+
+type InputType = z.infer<typeof InputSchema>;
+
+export const stockBalancingSuggestionsFlow = ai.defineFlow(
     {
         name: 'stockBalancingSuggestions',
-        inputSchema: z.object({
-            branches: z.array(z.object({
-                branchId: z.string(),
-                branchName: z.string(),
-                stockLevels: z.string(),
-                recentSales: z.string()
-            })),
-            products: z.array(z.object({
-                productId: z.string(),
-                productName: z.string()
-            }))
-        }),
+        inputSchema: InputSchema,
         outputSchema: z.array(SuggestionSchema)
     },
-    async (input) => {
+    async (input: InputType) => {
         const prompt = `
 Eres un experto en gestión de inventarios para agronegocios.
 

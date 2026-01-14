@@ -39,7 +39,7 @@ export default function ProductsPage() {
     const [searchTerm, setSearchTerm] = useState("");
 
     const form = useForm<ProductFormValues>({
-        resolver: zodResolver(productSchema),
+        resolver: zodResolver(productSchema) as any,
         defaultValues: {
             name: "",
             description: "",
