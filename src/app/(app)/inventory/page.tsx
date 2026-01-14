@@ -120,15 +120,15 @@ export default function InventoryPage() {
             const isSubtraction = movement.type === 'outflow' || ((movement.type === 'transfer' || movement.type === 'conversion' || movement.type === 'adjustment') && qty < 0);
 
             if (isAddition) {
-                const absQty = Math.abs(qty);
+                const realQty = qty; // No usamos abs() para permitir negativos si el usuario los registra así
                 item.layers.push({
-                    quantity: absQty,
+                    quantity: realQty,
                     cost: price,
                     date: movement.date
                 });
 
-                item.quantity += absQty;
-                item.totalValue += absQty * price;
+                item.quantity += realQty;
+                item.totalValue += realQty * price;
             } else if (isSubtraction) {
                 let remainingToRemove = Math.abs(qty);
 

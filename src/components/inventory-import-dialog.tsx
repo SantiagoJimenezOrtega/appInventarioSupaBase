@@ -53,15 +53,28 @@ export function InventoryImportDialog() {
         if (typeof val === 'number') return val;
 
         let str = String(val).trim();
+        // Remove currency symbols but keep separators
         str = str.replace(/[$\sA-Za-z]/g, '');
 
         if (str.includes('.') && str.includes(',')) {
+            // Case 1.234,56 (Colombian/German style)
             str = str.replace(/\./g, '');
             str = str.replace(',', '.');
         } else if (str.includes(',')) {
-            str = str.replace(',', '.');
+            // Case 1234,56 -> 1234.56
+            // Check if it's like 1.234 (thousand separator) but it's a comma
+            if (str.match(/,\d{3}$/) && !str.includes('.')) {
+                // Suspicious for being a thousand separator 1,000
+                // But usually, comma is decimal in Colombia. 
+                // Let's assume comma is decimal unless it matches exactly X,000
+                str = str.replace(',', '.');
+            } else {
+                str = str.replace(',', '.');
+            }
         } else if (str.includes('.') && !str.includes(',')) {
-            if (str.match(/\.\d{3}$/) || str.match(/\.\d{3}\./)) {
+            // Case 1.234 (Could be 1.234 or one thousand two hundred thirty four)
+            // If it matches exactly 3 digits after dot, assume it is thousand separator in CO
+            if (str.match(/\.\d{3}$/)) {
                 str = str.replace(/\./g, '');
             }
         }
@@ -82,7 +95,7 @@ export function InventoryImportDialog() {
         for (const part of layerParts) {
             try {
                 // Extract quantity: "1 @ $16.000,00 (Comprado: 16/06/2025)"
-                const qtyMatch = part.match(/^(\d+(?:[.,]\d+)?)\s*@/);
+                const qtyMatch = part.match(/^(-?\d+(?:[.,]\d+)?)\s*@/);
                 if (!qtyMatch) continue;
 
                 const quantity = parseNumber(qtyMatch[1]);
@@ -205,28 +218,52 @@ export function InventoryImportDialog() {
                 const movementProducts: any[] = [];
                 for (const rowData of rows) {
                     const layers = parseFIFOLayers(rowData.layersText);
-                    if (layers.length === 0) {
+                    const layersSum = layers.reduce((sum, l) => sum + l.quantity, 0);
+
+                    // If layers exist but don't match total quantity, we prioritize column 'Cantidad'
+                    // but we will distribute it across existing layers if possible
+                    if (layers.length > 0) {
+                        if (Math.abs(layersSum - rowData.quantity) > 0.01) {
+                            console.warn(`Discrepancia en ${rowData.product.name}: Cantidad Excel ${rowData.quantity} vs Suma Capas ${layersSum}. Usando cantidad de columna.`);
+                        }
+
+                        // If layersSum is 0 for some reason but text existed
+                        if (layersSum === 0) {
+                            movementProducts.push({
+                                productId: rowData.product.id,
+                                productName: rowData.product.name,
+                                quantity: rowData.quantity,
+                                priceAtTransaction: rowData.costFromColumn || 0
+                            });
+                        } else {
+                            // Adjust layers to match rowData.quantity proportionally or just add the difference to the last one
+                            const ratio = rowData.quantity / layersSum;
+                            layers.forEach(layer => {
+                                movementProducts.push({
+                                    productId: rowData.product.id,
+                                    productName: rowData.product.name,
+                                    quantity: layer.quantity * ratio,
+                                    priceAtTransaction: layer.cost
+                                });
+                            });
+                        }
+                    } else {
+                        // No layers, use direct quantity and cost
                         const totalValue = parseNumber(rowData.rawRow['Valor en Sucursal (Costo)'] || rowData.rawRow['Valor en Sucursal'] || 0);
                         let unitPrice = 0;
                         if (totalValue > 0 && rowData.quantity > 0) {
                             unitPrice = totalValue / rowData.quantity;
                         } else if (rowData.costFromColumn > 0) {
                             unitPrice = rowData.costFromColumn;
+                        } else {
+                            unitPrice = rowData.product.purchase_price || 0;
                         }
+
                         movementProducts.push({
                             productId: rowData.product.id,
                             productName: rowData.product.name,
                             quantity: rowData.quantity,
                             priceAtTransaction: unitPrice
-                        });
-                    } else {
-                        layers.forEach(layer => {
-                            movementProducts.push({
-                                productId: rowData.product.id,
-                                productName: rowData.product.name,
-                                quantity: layer.quantity,
-                                priceAtTransaction: layer.cost
-                            });
                         });
                     }
                 }
@@ -254,11 +291,22 @@ export function InventoryImportDialog() {
 
         setIsLoading(false);
 
-        if (skippedRows.length > 0) {
-            console.log("=== RESUMEN DE FILAS OMITIDAS ===");
-            console.table(skippedRows);
-            toast.warning(`${skippedRows.length} filas fueron omitidas por datos inválidos. Revisa la consola.`);
+        if (errors.length > 0 || skippedRows.length > 0) {
+            console.group("Resumen de Importación");
+            if (errors.length > 0) console.error("Errores:", errors);
+            if (skippedRows.length > 0) console.warn("Filas Omitidas:", skippedRows);
+            console.groupEnd();
         }
+
+        const skippedNames = Array.from(new Set(skippedRows.map(s => s.Excel_Producto))).slice(0, 10);
+        const skippedMsg = skippedRows.length > 0
+            ? `\nOmitidos: ${skippedRows.length} filas (ej: ${skippedNames.join(", ")}${skippedRows.length > 10 ? "..." : ""})`
+            : "";
+
+        toast.success(`Importación finalizada.`, {
+            description: `Se procesaron ${successCount} filas exitosamente.${skippedMsg}\nNota: Los valores se SUMAN al inventario actual.`,
+            duration: 10000
+        });
 
         if (failCount > 0) {
             toast.error(`Error en importación: ${failCount} productos no pudieron guardarse.`);

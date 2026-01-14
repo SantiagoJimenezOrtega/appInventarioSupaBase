@@ -144,7 +144,7 @@ export default function StockLogPage() {
             }
 
             group.totalProducts = group.items.length;
-            group.totalQuantity += Math.abs(movement.quantity || 0);
+            group.totalQuantity += movement.quantity || 0;
         });
 
         return Array.from(groups.values()).sort((a, b) =>
@@ -384,8 +384,8 @@ export default function StockLogPage() {
                                                     }
                                                 </TableCell>
                                                 <TableCell className="text-right font-bold">
-                                                    <span className={(item.type === "inflow" || (item.type === "adjustment" && item.quantity > 0) || (item.remission_number?.startsWith('AJUSTE-CORTE') && !item.comment?.includes('Faltante'))) ? "text-green-600" : "text-red-600"}>
-                                                        {(item.type === "inflow" || (item.type === "adjustment" && item.quantity > 0) || (item.remission_number?.startsWith('AJUSTE-CORTE') && !item.comment?.includes('Faltante'))) ? "+" : "-"}{Math.abs(item.quantity)}
+                                                    <span className={(item.quantity >= 0 && (item.type === "inflow" || item.type === "adjustment")) ? "text-green-600" : "text-red-600"}>
+                                                        {item.quantity > 0 ? "+" : ""}{item.quantity}
                                                     </span>
                                                 </TableCell>
                                                 <TableCell className="text-xs text-gray-500 truncate max-w-[150px]">
