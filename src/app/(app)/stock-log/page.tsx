@@ -138,9 +138,12 @@ export default function StockLogPage() {
                 group.type = movement.type;
             }
 
+            // AUTO-DETECT ADJUSTMENT: If remission starts with AJUSTE-CORTE
+            if (movement.remission_number?.startsWith('AJUSTE-CORTE')) {
+                group.type = 'adjustment';
+            }
+
             group.totalProducts = group.items.length;
-            // For transfers/conversions, we sum absolute values but divide by 2 later or just use the inflow part?
-            // Safer: just use the absolute value of quantity for summing the total volume of the group.
             group.totalQuantity += Math.abs(movement.quantity || 0);
         });
 
@@ -186,6 +189,7 @@ export default function StockLogPage() {
             case "outflow": return <ArrowUpCircle className="w-4 h-4 text-red-600" />;
             case "transfer": return <ArrowRightLeft className="w-4 h-4 text-blue-600" />;
             case "conversion": return <RefreshCw className="w-4 h-4 text-purple-600" />;
+            case "adjustment": return <Filter className="w-4 h-4 text-amber-600" />;
             default: return null;
         }
     };
@@ -196,6 +200,7 @@ export default function StockLogPage() {
             case "outflow": return "Salida";
             case "transfer": return "Traslado";
             case "conversion": return "Conversión";
+            case "adjustment": return "Ajuste";
             default: return type;
         }
     };
@@ -206,6 +211,7 @@ export default function StockLogPage() {
             case "outflow": return "bg-red-100 text-red-800";
             case "transfer": return "bg-blue-100 text-blue-800";
             case "conversion": return "bg-purple-100 text-purple-800";
+            case "adjustment": return "bg-amber-100 text-amber-800";
             default: return "bg-gray-100 text-gray-800";
         }
     };
@@ -223,7 +229,7 @@ export default function StockLogPage() {
                             <Plus className="mr-2 h-4 w-4" /> Nuevo Movimiento
                         </Button>
                     </DialogTrigger>
-                    <DialogContent className="max-w-4xl">
+                    <DialogContent className="max-w-[1200px] w-[95vw]">
                         <DialogHeader>
                             <DialogTitle>Registrar Movimiento</DialogTitle>
                         </DialogHeader>
@@ -254,6 +260,7 @@ export default function StockLogPage() {
                             <SelectItem value="outflow">Salidas</SelectItem>
                             <SelectItem value="transfer">Traslados</SelectItem>
                             <SelectItem value="conversion">Conversiones</SelectItem>
+                            <SelectItem value="adjustment">Ajustes</SelectItem>
                         </SelectContent>
                     </Select>
                 </div>
@@ -377,8 +384,8 @@ export default function StockLogPage() {
                                                     }
                                                 </TableCell>
                                                 <TableCell className="text-right font-bold">
-                                                    <span className={(item.type === "inflow" || item.quantity > 0) ? "text-green-600" : "text-red-600"}>
-                                                        {(item.type === "inflow" || item.quantity > 0) ? "+" : "-"}{Math.abs(item.quantity)}
+                                                    <span className={(item.type === "inflow" || (item.type === "adjustment" && item.quantity > 0) || (item.remission_number?.startsWith('AJUSTE-CORTE') && !item.comment?.includes('Faltante'))) ? "text-green-600" : "text-red-600"}>
+                                                        {(item.type === "inflow" || (item.type === "adjustment" && item.quantity > 0) || (item.remission_number?.startsWith('AJUSTE-CORTE') && !item.comment?.includes('Faltante'))) ? "+" : "-"}{Math.abs(item.quantity)}
                                                     </span>
                                                 </TableCell>
                                                 <TableCell className="text-xs text-gray-500 truncate max-w-[150px]">

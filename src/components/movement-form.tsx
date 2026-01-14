@@ -32,8 +32,6 @@ export function MovementForm({ onSuccess, initialData }: MovementFormProps) {
         branchId: "",
         providerId: "",
         dueDate: "",
-        iva: "",
-        retefuente: "",
         comment: "",
         products: [{ productId: "", quantity: "", priceAtTransaction: "" }]
     });
@@ -99,8 +97,6 @@ export function MovementForm({ onSuccess, initialData }: MovementFormProps) {
             providerId: inflowData.providerId,
             providerName: provider?.name,
             dueDate: inflowData.dueDate || null,
-            iva: inflowData.iva ? Number(inflowData.iva) : 0,
-            retefuente: inflowData.retefuente ? Number(inflowData.retefuente) : 0,
             comment: inflowData.comment,
             products: inflowData.products.map(p => {
                 const product = products?.find(prod => prod.id === p.productId);
@@ -404,33 +400,13 @@ export function MovementForm({ onSuccess, initialData }: MovementFormProps) {
                         ))}
                     </div>
 
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 gap-4">
                         <div>
                             <Label>Fecha de Vencimiento (Opcional)</Label>
                             <Input
                                 type="date"
                                 value={inflowData.dueDate}
                                 onChange={(e) => setInflowData({ ...inflowData, dueDate: e.target.value })}
-                            />
-                        </div>
-                        <div>
-                            <Label>IVA (Opcional)</Label>
-                            <Input
-                                type="number"
-                                step="0.01"
-                                value={inflowData.iva}
-                                onChange={(e) => setInflowData({ ...inflowData, iva: e.target.value })}
-                                placeholder="0"
-                            />
-                        </div>
-                        <div>
-                            <Label>Retefuente (Opcional)</Label>
-                            <Input
-                                type="number"
-                                step="0.01"
-                                value={inflowData.retefuente}
-                                onChange={(e) => setInflowData({ ...inflowData, retefuente: e.target.value })}
-                                placeholder="0"
                             />
                         </div>
                     </div>

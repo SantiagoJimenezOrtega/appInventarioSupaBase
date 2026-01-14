@@ -10,36 +10,63 @@ export async function POST(request: Request) {
     try {
         const { message, history } = await request.json();
 
-        // 1. Fetch current inventory context to give the AI factual data
-        const { data: products } = await supabase.from('products').select('*');
-        const { data: movements } = await supabase.from('stock_movements').select('*').limit(50);
+        // 1. Fetch data from Supabase
+        const { data: products } = await supabase.from('products').select('id, name, purchase_price, price');
+        const { data: branches } = await supabase.from('branches').select('id, name');
+        const { data: allMovements } = await supabase.from('stock_movements').select('*').order('date', { ascending: true });
 
-        // Simple aggregate for stock levels (this is a simplification, 
-        // in a real app we'd use the actual calculated levels)
-        const inventoryContext = products?.map(p => ({
-            name: p.name,
-            purchasePrice: p.purchase_price,
-            sellingPrice: p.price
-        }));
+        // 2. Calculate stock per product and branch
+        const stockMap = new Map();
+
+        allMovements?.forEach(m => {
+            const key = `${m.product_id}-${m.branch_id}`;
+            const qty = Number(m.quantity) || 0;
+            const current = stockMap.get(key) || 0;
+
+            // Check direction Based on type and sign as in the inventory page logic
+            const isAddition = m.type === 'inflow' || ((m.type === 'transfer' || m.type === 'conversion' || m.type === 'adjustment') && qty > 0);
+            const isSubtraction = m.type === 'outflow' || ((m.type === 'transfer' || m.type === 'conversion' || m.type === 'adjustment') && qty < 0);
+
+            if (isAddition) {
+                stockMap.set(key, current + Math.abs(qty));
+            } else if (isSubtraction) {
+                stockMap.set(key, Math.max(0, current - Math.abs(qty)));
+            }
+        });
+
+        // 3. Format context for AI
+        const summarizedStock = products?.map(p => {
+            const branchStocks = branches?.map(b => ({
+                branch: b.name,
+                stock: stockMap.get(`${p.id}-${b.id}`) || 0
+            })).filter(bs => bs.stock !== 0);
+
+            return {
+                name: p.name,
+                prices: { purchase: p.purchase_price, selling: p.price },
+                availability: branchStocks
+            };
+        }).filter(p => p.availability && p.availability.length > 0);
 
         const systemPrompt = `
             Eres el "Asistente Inteligente de Agroinv Gravity". 
-            Tu misión es responder dudas del usuario sobre su inventario usando datos reales.
+            Tu misión es responder dudas del usuario sobre su inventario usando datos reales proporcionados aquí.
             
-            Contexto de Inventario Actual:
-            ${JSON.stringify({ inventoryContext, recentMovements: movements }, null, 2)}
+            Contexto de Inventario Actual (Existencias por sucursal):
+            ${JSON.stringify(summarizedStock, null, 2)}
 
             Reglas de respuesta:
             1. Sé amable, profesional y breve.
-            2. Si no sabes un dato específico basado en el contexto, dilo humildemente.
-            3. Responde siempre en español.
-            4. No uses markdown complejo, solo texto plano o negritas sencillas.
+            2. Usa específicamente la información de "availability" para saber qué hay en cada sucursal.
+            3. Si el usuario pregunta por un producto o sucursal que no aparece con stock, indica que no hay existencias registradas allí.
+            4. Responde siempre en español.
+            5. No uses markdown complejo, solo texto plano o negritas sencillas.
         `;
 
         const chat = model.startChat({
             history: [
                 { role: "user", parts: [{ text: systemPrompt }] },
-                { role: "model", parts: [{ text: "Entendido. Soy el asistente de Agroinv Gravity y estoy listo para ayudar con los datos proporcionados." }] },
+                { role: "model", parts: [{ text: "Entendido. Soy el asistente de Agroinv Gravity. Tengo las existencias actuales por sucursal y estoy listo para responder tus dudas." }] },
                 ...history.map((h: any) => ({
                     role: h.role === "user" ? "user" : "model",
                     parts: [{ text: h.content }]

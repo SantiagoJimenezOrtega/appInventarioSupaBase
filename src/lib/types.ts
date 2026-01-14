@@ -29,7 +29,7 @@ export interface StockMovement {
     product_name: string;
     branch_id: string;
     branch_name: string;
-    type: 'inflow' | 'outflow' | 'transfer' | 'conversion';
+    type: 'inflow' | 'outflow' | 'transfer' | 'conversion' | 'adjustment';
     quantity: number;
     date: string;
     price_at_transaction?: number;

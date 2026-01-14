@@ -108,8 +108,8 @@ export default function InventoryCountsPage() {
                     const isInitialMovement = m.comment?.toLowerCase().includes('inicial') || m.comment?.toLowerCase().includes('initial');
                     const qty = Number(m.quantity);
 
-                    const isAddition = m.type === 'inflow' || ((m.type === 'transfer' || m.type === 'conversion') && qty > 0);
-                    const isSubtraction = m.type === 'outflow' || ((m.type === 'transfer' || m.type === 'conversion') && qty < 0);
+                    const isAddition = m.type === 'inflow' || ((m.type === 'transfer' || m.type === 'conversion' || m.type === 'adjustment') && qty > 0);
+                    const isSubtraction = m.type === 'outflow' || ((m.type === 'transfer' || m.type === 'conversion' || m.type === 'adjustment') && qty < 0);
 
                     if (mDate <= lastCountDate) {
                         // Sum up everything before or at the last count date

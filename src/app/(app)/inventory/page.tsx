@@ -116,8 +116,8 @@ export default function InventoryPage() {
             const qty = Number(movement.quantity) || 0;
             const price = Number(movement.price_at_transaction || 0);
 
-            const isAddition = movement.type === 'inflow' || ((movement.type === 'transfer' || movement.type === 'conversion') && qty > 0);
-            const isSubtraction = movement.type === 'outflow' || ((movement.type === 'transfer' || movement.type === 'conversion') && qty < 0);
+            const isAddition = movement.type === 'inflow' || ((movement.type === 'transfer' || movement.type === 'conversion' || movement.type === 'adjustment') && qty > 0);
+            const isSubtraction = movement.type === 'outflow' || ((movement.type === 'transfer' || movement.type === 'conversion' || movement.type === 'adjustment') && qty < 0);
 
             if (isAddition) {
                 const absQty = Math.abs(qty);
@@ -146,6 +146,13 @@ export default function InventoryPage() {
                         item.totalValue -= remainingToRemove * oldestLayer.cost;
                         remainingToRemove = 0;
                     }
+                }
+
+                // If there's still quantity to remove but no layers left, allow negative quantity
+                if (remainingToRemove > 0) {
+                    item.quantity -= remainingToRemove;
+                    // For value, if it goes negative, we use the transaction price to keep track of the deficit value
+                    item.totalValue -= remainingToRemove * price;
                 }
             }
 
@@ -353,6 +360,15 @@ export default function InventoryPage() {
                                 const isExpanded = expandedRows.has(group.productId);
                                 const product = products?.find(p => String(p.id).trim() === String(group.productId).trim());
 
+                                // Filter visible branches and calculate dynamic total for display
+                                const visibleBranches = branchFilter === "all"
+                                    ? group.branches
+                                    : group.branches.filter(b => b.branchId === branchFilter);
+
+                                const displayQuantity = branchFilter === "all"
+                                    ? group.totalQuantity
+                                    : visibleBranches.reduce((sum, b) => sum + b.quantity, 0);
+
                                 return (
                                     <React.Fragment key={group.productId}>
                                         <TableRow
@@ -362,15 +378,15 @@ export default function InventoryPage() {
                                                 className="cursor-pointer"
                                                 onClick={() => toggleRow(group.productId)}
                                             >
-                                                {group.branches.length > 1 ? (
+                                                {visibleBranches.length > 0 ? (
                                                     isExpanded ?
                                                         <ChevronDown className="w-4 h-4 text-gray-500" /> :
                                                         <ChevronRightIcon className="w-4 h-4 text-gray-500" />
                                                 ) : null}
                                             </TableCell>
                                             <TableCell className="font-medium">{group.productName}</TableCell>
-                                            <TableCell className="text-right font-bold text-blue-600">
-                                                {group.totalQuantity.toFixed(2)}
+                                            <TableCell className={`text-right font-bold ${displayQuantity < 0 ? 'text-red-600' : 'text-blue-600'}`}>
+                                                {displayQuantity.toFixed(2)}
                                             </TableCell>
                                             <TableCell className="text-right">
                                                 <Input
@@ -393,18 +409,20 @@ export default function InventoryPage() {
                                                 />
                                             </TableCell>
                                             <TableCell className="text-right font-bold text-green-600">
-                                                ${(group.totalQuantity * (product?.purchase_price || 0)).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                                                ${(displayQuantity * (product?.purchase_price || 0)).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                                             </TableCell>
                                             <TableCell className="text-center">
                                                 <div className="flex items-center justify-center gap-1">
                                                     <Store className="w-3 h-3 text-gray-400" />
-                                                    <span className="text-sm font-medium">{group.branches.length}</span>
+                                                    <span className="text-sm font-medium">
+                                                        {branchFilter === "all" ? group.branches.length : visibleBranches.length}
+                                                    </span>
                                                 </div>
                                             </TableCell>
                                         </TableRow>
 
                                         {/* Expanded rows showing branches */}
-                                        {isExpanded && group.branches.map((branch, idx) => (
+                                        {isExpanded && visibleBranches.map((branch, idx) => (
                                             <TableRow key={`${group.productId}-${branch.branchId}-${idx}`} className="bg-gray-50">
                                                 <TableCell></TableCell>
                                                 <TableCell className="pl-8">
@@ -413,7 +431,7 @@ export default function InventoryPage() {
                                                         <span className="text-gray-600">{branch.branchName}</span>
                                                     </div>
                                                 </TableCell>
-                                                <TableCell className="text-right font-bold text-blue-600">
+                                                <TableCell className={`text-right font-bold ${branch.quantity < 0 ? 'text-red-600' : 'text-blue-600'}`}>
                                                     {branch.quantity.toFixed(2)}
                                                 </TableCell>
                                                 <TableCell className="text-right">

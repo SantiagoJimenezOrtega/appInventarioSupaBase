@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Upload, FileSpreadsheet, AlertCircle, Loader2, CheckCircle } from "lucide-react";
 import * as XLSX from "xlsx";
 import { toast } from "sonner";
-import { useCreateStockMovement, useProducts, useBranches } from "@/hooks/use-api";
+import { useCreateStockMovement, useProducts, useBranches, useUpdateProduct } from "@/hooks/use-api";
 
 export function InventoryImportDialog() {
     const [isOpen, setIsOpen] = useState(false);
@@ -18,6 +18,7 @@ export function InventoryImportDialog() {
     const [error, setError] = useState("");
 
     const createMovement = useCreateStockMovement();
+    const updateProduct = useUpdateProduct();
     const { data: products } = useProducts();
     const { data: branches } = useBranches();
 
@@ -134,34 +135,23 @@ export function InventoryImportDialog() {
             return name.toLowerCase()
                 .normalize("NFD")
                 .replace(/[\u0300-\u036f]/g, "") // Quitar tildes
-                .replace(/[^a-z0-9]/g, ''); // Solo mantiene letras y números (incluyendo la 'x')
+                .replace(/[^a-z0-9]/g, ''); // Solo mantiene letras y números
         };
 
-        // Group rows by Branch to send fewer requests
+        // 1. Pass: Collect unique product updates and group rows by branch
+        const productUpdates = new Map<string, number>();
         const branchGroups = new Map<string, any[]>();
 
-        console.log("=== INICIANDO MATCHING DE PRODUCTOS ===");
-        console.log("Ejemplo de normalización:", "ABONEX x 4 L =>", normalizeUltra("ABONEX x 4 L"));
+        console.log("=== INICIANDO FASE 1: PROCESAMIENTO DE EXCEL ===");
 
         for (const row of preview) {
-            // Flexible header detection (looking for any variant of "Cantidad")
             const productName = String(row['Producto'] || row['producto'] || row['PRODUCTO'] || row['Name'] || row['PRODUCTOS'] || "").trim();
             const branchName = String(row['Sucursal'] || row['sucursal'] || row['SUCURSAL'] || row['Branch'] || row['SEDE'] || "").trim();
-
-            // Try different possible quantity headers
             const rawQty = row['Cantidad en Sucursal'] || row['Cantidad'] || row['cantidad'] || row['CANTIDAD'] || row['Stock'] || row['STOCK'] || 0;
             const quantity = parseNumber(rawQty);
 
-            // REGLA GLOBAL: Si la cantidad es 0, se ignora SIEMPRE (para Tunja, Versalles y todas)
             if (!productName || !branchName || quantity === 0) {
-                if (quantity === 0 && productName) {
-                    console.log(`🚫 FILTRO 0: Ignorando ${productName} en ${branchName} (Cantidad es exactamente 0)`);
-                }
-                skippedRows.push({
-                    Excel_Producto: productName,
-                    Excel_Sucursal: branchName,
-                    Razon: quantity === 0 ? "Cantidad es 0" : "Falta nombre",
-                });
+                skippedRows.push({ Excel_Producto: productName, Excel_Sucursal: branchName, Razon: quantity === 0 ? "Cantidad 0" : "Falta nombre/sede" });
                 continue;
             }
 
@@ -172,54 +162,64 @@ export function InventoryImportDialog() {
             const branch = branches?.find(b => normalizeUltra(b.name) === matchBranch);
 
             if (!product || !branch) {
-                const reason = !product ? "PRODUCTO NO ENCONTRADO" : "SUCURSAL NO ENCONTRADA";
-                console.warn(`❌ ERROR: ${reason} | Excel: "${productName}" [${matchName}] | Sede: "${branchName}" [${matchBranch}]`);
-
-                skippedRows.push({
-                    Excel_Producto: productName,
-                    Excel_Sucursal: branchName,
-                    Razon: reason,
-                    Match_Intentado: matchName,
-                    Falla_Sede: !branch
-                });
+                skippedRows.push({ Excel_Producto: productName, Excel_Sucursal: branchName, Razon: !product ? "Producto no encontrado" : "Sucursal no encontrada" });
                 continue;
+            }
+
+            const rawCostPrice =
+                row['Precio Unit. Compra'] || row['PRECIO UNIT. COMPRA'] || row['precio unit. compra'] ||
+                row['Precio Unit. Venta'] || row['precio unit. venta'] || row['PRECIO UNIT. VENTA'] ||
+                row['Costo Unitario'] || row['COSTO UNITARIO'] || row['Costo'] || null;
+            const costPrice = rawCostPrice !== null ? parseNumber(rawCostPrice) : null;
+
+            if (costPrice !== null && costPrice > 0) {
+                productUpdates.set(product.id, costPrice);
             }
 
             const key = branch.id;
             if (!branchGroups.has(key)) branchGroups.set(key, []);
-
             branchGroups.get(key)!.push({
                 product,
                 branch,
                 quantity,
+                costFromColumn: costPrice,
                 layersText: row['Capas de Costo (Detalle)'] || row['Capas de Costo'] || row['Capas'] || '',
                 rawRow: row
             });
         }
 
-        // Process each branch group
+        // 2. Pass: Execute product updates in parallel
+        if (productUpdates.size > 0) {
+            console.log(`=== FASE 2: ACTUALIZANDO ${productUpdates.size} PRECIOS EN PARALELO ===`);
+            const updatePromises = Array.from(productUpdates.entries()).map(([id, price]) =>
+                updateProduct.mutateAsync({ id, data: { purchase_price: price } })
+            );
+            await Promise.all(updatePromises);
+        }
+
+        // 3. Pass: Execute branch movements
+        console.log(`=== FASE 3: CREANDO MOVIMIENTOS POR SUCURSAL (${branchGroups.size} sedes) ===`);
         for (const [branchId, rows] of branchGroups.entries()) {
             const branch = rows[0].branch;
-            console.log(`Procesando ${rows.length} productos para sucursal: ${branch.name}`);
-
             try {
-                // Build a single movement with multiple products
                 const movementProducts: any[] = [];
-
                 for (const rowData of rows) {
                     const layers = parseFIFOLayers(rowData.layersText);
-
                     if (layers.length === 0) {
-                        const totalValue = parseNumber(rowData.rawRow['Valor en Sucursal (Costo)'] || 0);
+                        const totalValue = parseNumber(rowData.rawRow['Valor en Sucursal (Costo)'] || rowData.rawRow['Valor en Sucursal'] || 0);
+                        let unitPrice = 0;
+                        if (totalValue > 0 && rowData.quantity > 0) {
+                            unitPrice = totalValue / rowData.quantity;
+                        } else if (rowData.costFromColumn > 0) {
+                            unitPrice = rowData.costFromColumn;
+                        }
                         movementProducts.push({
                             productId: rowData.product.id,
                             productName: rowData.product.name,
                             quantity: rowData.quantity,
-                            priceAtTransaction: rowData.quantity > 0 ? totalValue / rowData.quantity : 0
+                            priceAtTransaction: unitPrice
                         });
                     } else {
-                        // If it has layers, we can't easily group it in one product entry if dates are different
-                        // but we can send them as separate product entries in the same movement payload
                         layers.forEach(layer => {
                             movementProducts.push({
                                 productId: rowData.product.id,
@@ -232,7 +232,7 @@ export function InventoryImportDialog() {
                 }
 
                 if (movementProducts.length > 0) {
-                    const payload = {
+                    await createMovement.mutateAsync({
                         type: "inflow",
                         date: new Date().toISOString(),
                         remissionNumber: batchId,
@@ -242,14 +242,12 @@ export function InventoryImportDialog() {
                         providerName: "Inventario Inicial",
                         comment: `Importación masiva Excel - ${batchDate}`,
                         products: movementProducts
-                    };
-
-                    await createMovement.mutateAsync(payload);
+                    });
                     successCount += rows.length;
                 }
             } catch (e: any) {
-                console.error(`Error en grupo sucursal ${branch.name}:`, e);
-                errors.push(`Error sucursal ${branch.name}: ${e.message}`);
+                console.error(`Error en sucursal ${branch.name}:`, e);
+                errors.push(`Sucursal ${branch.name}: ${e.message}`);
                 failCount += rows.length;
             }
         }

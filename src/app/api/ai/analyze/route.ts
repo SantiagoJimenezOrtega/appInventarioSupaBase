@@ -14,50 +14,58 @@ export async function POST(request: Request) {
         }
 
         // 1. Fetch relevant data from Supabase
-        const { data: products } = await supabase.from('products').select('*');
-        const { data: branches } = await supabase.from('branches').select('*');
-        const { data: movements } = await supabase.from('stock_movements')
-            .select('*')
-            .order('date', { ascending: false })
-            .limit(100);
+        const { data: products } = await supabase.from('products').select('id, name, purchase_price, price');
+        const { data: branches } = await supabase.from('branches').select('id, name');
+        const { data: allMovements } = await supabase.from('stock_movements').select('*').order('date', { ascending: true });
 
-        // 2. Prepare context for AI
-        const context = {
-            summary: "Resumen de Inventario Agropecuario",
-            productsCount: products?.length || 0,
-            branchesCount: branches?.length || 0,
-            recentMovements: movements?.map(m => ({
-                action: m.type,
-                product: m.product_name,
-                branch: m.branch_name,
-                qty: m.quantity,
-                date: m.date
-            })),
-            inventoryOverview: products?.map(p => ({
+        // 2. Calculate stock per product and branch
+        const stockMap = new Map();
+
+        allMovements?.forEach(m => {
+            const key = `${m.product_id}-${m.branch_id}`;
+            const qty = Number(m.quantity) || 0;
+            const current = stockMap.get(key) || 0;
+
+            const isAddition = m.type === 'inflow' || ((m.type === 'transfer' || m.type === 'conversion' || m.type === 'adjustment') && qty > 0);
+            const isSubtraction = m.type === 'outflow' || ((m.type === 'transfer' || m.type === 'conversion' || m.type === 'adjustment') && qty < 0);
+
+            if (isAddition) {
+                stockMap.set(key, current + Math.abs(qty));
+            } else if (isSubtraction) {
+                stockMap.set(key, Math.max(0, current - Math.abs(qty)));
+            }
+        });
+
+        // 3. Format summarized context for AI
+        const summarizedStock = products?.map(p => {
+            const availability = branches?.map(b => ({
+                branch: b.name,
+                stock: stockMap.get(`${p.id}-${b.id}`) || 0
+            })).filter(a => a.stock !== 0);
+
+            return {
                 name: p.name,
-                cost: p.purchase_price,
-                price: p.price
-            }))
-        };
+                prices: { cost: p.purchase_price, selling: p.price },
+                availability
+            };
+        }).filter(p => p.availability && p.availability.length > 0);
 
         const prompt = `
-            Eres el "Copiloto Estratégico" de Agroinv Gravity, un sistema de gestión agropecuaria.
-            Tu misión es analizar los datos de inventario y dar 3 consejos accionables y breves (Insights).
+            Eres el "Copiloto Estratégico" de Agroinv Gravity.
+            Analiza el siguiente inventario real y genera 3 consejos estratégicos breves.
             
-            Pilares de tu análisis:
-            1. Vigilancia (Alertas de stock o anomalías).
-            2. Estrategia (Optimización de capital o rotación).
-            3. Eficiencia (Sugerencias de mejora).
+            Datos Reales (Stock por Sucursal):
+            ${JSON.stringify(summarizedStock, null, 2)}
 
-            Datos actuales:
-            ${JSON.stringify(context, null, 2)}
+            Pilares:
+            1. Vigilancia (Alertas si un producto tiene poco stock en alguna sucursal).
+            2. Estrategia (Optimización de rotación o capital).
+            3. Eficiencia (Traslados sugeridos entre sucursales si aplica).
 
-            Responde en formato JSON estrictamente como un array de objetos con esta estructura:
+            Responde ÚNICAMENTE en JSON con esta estructura:
             [
-                { "title": "...", "description": "...", "type": "warning|info|success" },
-                ...
+                { "title": "...", "description": "...", "type": "warning|info|success" }
             ]
-            Sé breve, profesional y directo. No incluyas markdown, solo el JSON.
         `;
 
         const result = await model.generateContent(prompt);

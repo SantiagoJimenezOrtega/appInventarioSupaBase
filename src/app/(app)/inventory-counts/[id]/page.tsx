@@ -134,8 +134,8 @@ export default function InventoryCountDetailPage() {
                     const isInitialMovement = m.comment?.toLowerCase().includes('inicial') || m.comment?.toLowerCase().includes('initial');
                     const mQty = Number(m.quantity);
 
-                    const isAddition = m.type === 'inflow' || ((m.type === 'transfer' || m.type === 'conversion') && mQty > 0);
-                    const isSubtraction = m.type === 'outflow' || ((m.type === 'transfer' || m.type === 'conversion') && mQty < 0);
+                    const isAddition = m.type === 'inflow' || ((m.type === 'transfer' || m.type === 'conversion' || m.type === 'adjustment') && mQty > 0);
+                    const isSubtraction = m.type === 'outflow' || ((m.type === 'transfer' || m.type === 'conversion' || m.type === 'adjustment') && mQty < 0);
 
                     if (mDate <= lastCountDate) {
                         if (isAddition) initial += Math.abs(mQty);
