@@ -16,6 +16,7 @@ export async function POST(request: Request) {
         // 1. Fetch relevant data from Supabase
         const { data: products } = await supabase.from('products').select('id, name, purchase_price, price');
         const { data: branches } = await supabase.from('branches').select('id, name');
+        const { data: providers } = await supabase.from('providers').select('id, name');
         const { data: allMovements } = await supabase.from('stock_movements').select('*').order('date', { ascending: true });
 
         // 2. Calculate stock per product and branch
@@ -32,7 +33,7 @@ export async function POST(request: Request) {
             if (isAddition) {
                 stockMap.set(key, current + Math.abs(qty));
             } else if (isSubtraction) {
-                stockMap.set(key, Math.max(0, current - Math.abs(qty)));
+                stockMap.set(key, current - Math.abs(qty));
             }
         });
 
@@ -46,21 +47,26 @@ export async function POST(request: Request) {
             return {
                 name: p.name,
                 prices: { cost: p.purchase_price, selling: p.price },
-                availability
+                availability: availability && availability.length > 0 ? availability : "Cero existencias"
             };
-        }).filter(p => p.availability && p.availability.length > 0);
+        });
 
         const prompt = `
             Eres el "Copiloto Estratégico" de Agroinv Gravity.
             Analiza el siguiente inventario real y genera 3 consejos estratégicos breves.
             
-            Datos Reales (Stock por Sucursal):
+            RESUMEN GENERAL:
+            - Sedes: ${branches?.length}
+            - Proveedores: ${providers?.length} (${providers?.map(pr => pr.name).join(', ')})
+            - Total Variedad Productos: ${products?.length}
+
+            DATOS REALES (Stock por Sucursal):
             ${JSON.stringify(summarizedStock, null, 2)}
 
-            Pilares:
-            1. Vigilancia (Alertas si un producto tiene poco stock en alguna sucursal).
-            2. Estrategia (Optimización de rotación o capital).
-            3. Eficiencia (Traslados sugeridos entre sucursales si aplica).
+            PILARES DE ANÁLISIS:
+            1. Vigilancia: Alertas de stock bajo o NEGATIVO (faltantes/préstamos).
+            2. Estrategia: Optimización según precios y proveedores.
+            3. Eficiencia: Sugerir traslados si una sede tiene mucho y otra poco de lo mismo.
 
             Responde ÚNICAMENTE en JSON con esta estructura:
             [

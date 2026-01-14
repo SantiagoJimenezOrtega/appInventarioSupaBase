@@ -11,9 +11,11 @@ export async function POST(request: Request) {
         const { message, history } = await request.json();
 
         // 1. Fetch data from Supabase
-        const { data: products } = await supabase.from('products').select('id, name, purchase_price, price');
-        const { data: branches } = await supabase.from('branches').select('id, name');
+        const { data: products } = await supabase.from('products').select('id, name, purchase_price, price, description');
+        const { data: branches } = await supabase.from('branches').select('id, name, location');
+        const { data: providers } = await supabase.from('providers').select('id, name, contact_person');
         const { data: allMovements } = await supabase.from('stock_movements').select('*').order('date', { ascending: true });
+        const { data: recentMovements } = await supabase.from('stock_movements').select('*').order('date', { ascending: false }).limit(30);
 
         // 2. Calculate stock per product and branch
         const stockMap = new Map();
@@ -30,7 +32,7 @@ export async function POST(request: Request) {
             if (isAddition) {
                 stockMap.set(key, current + Math.abs(qty));
             } else if (isSubtraction) {
-                stockMap.set(key, Math.max(0, current - Math.abs(qty)));
+                stockMap.set(key, current - Math.abs(qty));
             }
         });
 
@@ -43,24 +45,40 @@ export async function POST(request: Request) {
 
             return {
                 name: p.name,
+                description: p.description,
                 prices: { purchase: p.purchase_price, selling: p.price },
-                availability: branchStocks
+                availability: branchStocks && branchStocks.length > 0 ? branchStocks : "Sin existencias en ninguna sede"
             };
-        }).filter(p => p.availability && p.availability.length > 0);
+        });
 
         const systemPrompt = `
             Eres el "Asistente Inteligente de Agroinv Gravity". 
-            Tu misión es responder dudas del usuario sobre su inventario usando datos reales proporcionados aquí.
+            Tu misión es responder dudas del usuario sobre su inventario, sedes, proveedores y movimientos usando datos reales.
             
-            Contexto de Inventario Actual (Existencias por sucursal):
+            RESUMEN DEL SISTEMA:
+            - Sedes Registradas: ${branches?.length} (${branches?.map(b => b.name).join(', ')})
+            - Proveedores: ${providers?.length} (${providers?.map(p => p.name).join(', ')})
+            - Total Productos: ${products?.length}
+
+            DATOS DE INVENTARIO (Existencias por sucursal):
             ${JSON.stringify(summarizedStock, null, 2)}
 
-            Reglas de respuesta:
-            1. Sé amable, profesional y breve.
-            2. Usa específicamente la información de "availability" para saber qué hay en cada sucursal.
-            3. Si el usuario pregunta por un producto o sucursal que no aparece con stock, indica que no hay existencias registradas allí.
-            4. Responde siempre en español.
-            5. No uses markdown complejo, solo texto plano o negritas sencillas.
+            ÚLTIMOS 30 MOVIMIENTOS (Historial reciente):
+            ${JSON.stringify(recentMovements?.map(m => ({
+            fecha: m.date,
+            producto: m.product_name,
+            sede: m.branch_name,
+            tipo: m.type,
+            cantidad: m.quantity,
+            comentario: m.comment
+        })), null, 2)}
+
+            REGLAS IMPORTANTES:
+            1. Sé amable, profesional y conciso.
+            2. Si un stock es NEGATIVO (ej. -10), indícalo claramente como un faltante o préstamo pendiente de ajuste.
+            3. Si el usuario pregunta por un producto que no está en la lista de inventario, di que no existe en el sistema.
+            4. Tienes acceso a los últimos movimientos para responder "¿qué fue lo último que entró?" o similares.
+            5. Responde siempre en español. No uses markdown complejo.
         `;
 
         const chat = model.startChat({
