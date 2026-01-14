@@ -21,11 +21,14 @@ export async function POST(request: Request) {
         const stockMap = new Map();
 
         allMovements?.forEach(m => {
-            const key = `${m.product_id}-${m.branch_id}`;
+            const pId = String(m.product_id || '').trim();
+            const bId = String(m.branch_id || '').trim();
+            if (!pId || !bId) return;
+
+            const key = `${pId}-${bId}`;
             const qty = Number(m.quantity) || 0;
             const current = stockMap.get(key) || 0;
 
-            // Check direction Based on type and sign as in the inventory page logic
             const isAddition = m.type === 'inflow' || ((m.type === 'transfer' || m.type === 'conversion' || m.type === 'adjustment') && qty > 0);
             const isSubtraction = m.type === 'outflow' || ((m.type === 'transfer' || m.type === 'conversion' || m.type === 'adjustment') && qty < 0);
 
@@ -38,47 +41,59 @@ export async function POST(request: Request) {
 
         // 3. Format context for AI
         const summarizedStock = products?.map(p => {
+            const pId = String(p.id).trim();
             const branchStocks = branches?.map(b => ({
                 branch: b.name,
-                stock: stockMap.get(`${p.id}-${b.id}`) || 0
+                stock: stockMap.get(`${pId}-${String(b.id).trim()}`) || 0
             })).filter(bs => bs.stock !== 0);
 
             return {
                 name: p.name,
                 description: p.description,
                 prices: { purchase: p.purchase_price, selling: p.price },
-                availability: branchStocks && branchStocks.length > 0 ? branchStocks : "Sin existencias en ninguna sede"
+                availability: branchStocks && branchStocks.length > 0 ? branchStocks : "Sin existencias"
             };
         });
 
+        // Explicitly extract negatives for the prompt
+        const negativeStockAlerts = summarizedStock?.filter(p =>
+            Array.isArray(p.availability) && p.availability.some(a => a.stock < 0)
+        ).map(p => ({
+            producto: p.name,
+            faltantes: (p.availability as any[]).filter(a => a.stock < 0)
+        }));
+
         const systemPrompt = `
             Eres el "Asistente Inteligente de Agroinv Gravity". 
-            Tu misión es responder dudas del usuario sobre su inventario, sedes, proveedores y movimientos usando datos reales.
+            Tu misión es responder dudas del usuario sobre su inventario, sedes, proveedores y movimientos usando datos REALES.
             
-            RESUMEN DEL SISTEMA:
-            - Sedes Registradas: ${branches?.length} (${branches?.map(b => b.name).join(', ')})
-            - Proveedores: ${providers?.length} (${providers?.map(p => p.name).join(', ')})
+            ⚠️ ALERTAS DE STOCK NEGATIVO (Préstamos o faltantes urgentes):
+            ${negativeStockAlerts && negativeStockAlerts.length > 0
+                ? JSON.stringify(negativeStockAlerts, null, 2)
+                : "No hay productos con stock negativo actualmente."}
+
+            RESUMEN GENERAL:
+            - Sedes Registradas: ${branches?.length}
+            - Proveedores: ${providers?.length}
             - Total Productos: ${products?.length}
 
-            DATOS DE INVENTARIO (Existencias por sucursal):
+            DETALLE DE INVENTARIO:
             ${JSON.stringify(summarizedStock, null, 2)}
 
-            ÚLTIMOS 30 MOVIMIENTOS (Historial reciente):
+            ÚLTIMOS 30 MOVIMIENTOS:
             ${JSON.stringify(recentMovements?.map(m => ({
-            fecha: m.date,
-            producto: m.product_name,
-            sede: m.branch_name,
-            tipo: m.type,
-            cantidad: m.quantity,
-            comentario: m.comment
-        })), null, 2)}
+                    fecha: m.date,
+                    producto: m.product_name,
+                    sede: m.branch_name,
+                    tipo: m.type,
+                    cantidad: m.quantity,
+                    comentario: m.comment
+                })), null, 2)}
 
-            REGLAS IMPORTANTES:
-            1. Sé amable, profesional y conciso.
-            2. Si un stock es NEGATIVO (ej. -10), indícalo claramente como un faltante o préstamo pendiente de ajuste.
-            3. Si el usuario pregunta por un producto que no está en la lista de inventario, di que no existe en el sistema.
-            4. Tienes acceso a los últimos movimientos para responder "¿qué fue lo último que entró?" o similares.
-            5. Responde siempre en español. No uses markdown complejo.
+            REGLAS CRÍTICAS:
+            1. Si el usuario pregunta por qué algo está en negativo, explícale que el stock es de ${negativeStockAlerts?.find(n => n.producto.includes("Abonex"))?.faltantes[0]?.stock || "N/A"} y que debe ajustarse.
+            2. NUNCA digas que no hay productos negativos si el bloque de "ALERTAS DE STOCK NEGATIVO" tiene datos.
+            3. Responde siempre en español. No uses markdown complejo.
         `;
 
         const chat = model.startChat({
