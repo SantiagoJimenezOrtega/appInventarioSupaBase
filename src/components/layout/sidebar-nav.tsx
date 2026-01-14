@@ -13,7 +13,8 @@ import {
     Calculator,
     Wallet,
     Brain,
-    Sprout
+    Sprout,
+    TrendingUp
 } from "lucide-react";
 
 export default function SidebarNav() {
@@ -28,7 +29,8 @@ export default function SidebarNav() {
         { title: "Inventario FIFO", href: "/inventory", icon: ClipboardList },
         { title: "Cortes de Inventario", href: "/inventory-counts", icon: Calculator },
         { title: "Cartera", href: "/cartera", icon: Wallet },
-        { title: "Sugerencias IA", href: "/stock-balancing", icon: Brain },
+        { title: "Copiloto IA", href: "/ia-chat", icon: Brain },
+        { title: "Sugerencias IA", href: "/stock-balancing", icon: TrendingUp },
     ];
 
     return (
