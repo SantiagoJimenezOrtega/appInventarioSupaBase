@@ -1,25 +1,27 @@
 "use client";
 
-import { useState } from "react";
-import { useCreateStockMovement, useProducts, useBranches, useProviders } from "@/hooks/use-api";
+import { useState, useEffect } from "react";
+import { useCreateStockMovement, useProducts, useBranches, useProviders, useUpdateRemission } from "@/hooks/use-api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { Plus, Trash2, Loader2, Calculator, ArrowRightLeft } from "lucide-react";
 import { toast } from "sonner";
-import { Loader2, Plus, Trash2, Calculator } from "lucide-react";
 
 interface MovementFormProps {
     onSuccess: () => void;
+    initialData?: any; // Data for editing
 }
 
-export function MovementForm({ onSuccess }: MovementFormProps) {
+export function MovementForm({ onSuccess, initialData }: MovementFormProps) {
     const { data: products } = useProducts();
     const { data: branches } = useBranches();
     const { data: providers } = useProviders();
     const createMovement = useCreateStockMovement();
+    const updateRemission = useUpdateRemission();
 
     const [activeTab, setActiveTab] = useState("inflow");
 
@@ -711,6 +713,11 @@ export function MovementForm({ onSuccess }: MovementFormProps) {
                                         onValueChange={(v) => {
                                             const newProducts = [...transferData.products];
                                             newProducts[index].productId = v;
+                                            // Pre-fill price from product database
+                                            const selectedProduct = products?.find(p => p.id === v);
+                                            if (selectedProduct) {
+                                                newProducts[index].priceAtTransaction = String(selectedProduct.purchase_price || 0);
+                                            }
                                             setTransferData({ ...transferData, products: newProducts });
                                         }}
                                     >
@@ -860,7 +867,17 @@ export function MovementForm({ onSuccess }: MovementFormProps) {
                         <div className="grid grid-cols-2 gap-4 mt-2">
                             <div>
                                 <Label className="text-xs">Producto</Label>
-                                <Select value={conversionData.toProductId} onValueChange={(v) => setConversionData({ ...conversionData, toProductId: v })}>
+                                <Select
+                                    value={conversionData.toProductId}
+                                    onValueChange={(v) => {
+                                        const selectedProduct = products?.find(p => p.id === v);
+                                        setConversionData({
+                                            ...conversionData,
+                                            toProductId: v,
+                                            priceAtTransaction: selectedProduct ? String(selectedProduct.purchase_price || 0) : conversionData.priceAtTransaction
+                                        });
+                                    }}
+                                >
                                     <SelectTrigger>
                                         <SelectValue placeholder="Seleccionar" />
                                     </SelectTrigger>

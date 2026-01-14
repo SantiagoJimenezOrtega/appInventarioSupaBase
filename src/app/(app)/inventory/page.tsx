@@ -116,17 +116,21 @@ export default function InventoryPage() {
             const qty = Number(movement.quantity) || 0;
             const price = Number(movement.price_at_transaction || 0);
 
-            if (movement.type === 'inflow') {
+            const isAddition = movement.type === 'inflow' || ((movement.type === 'transfer' || movement.type === 'conversion') && qty > 0);
+            const isSubtraction = movement.type === 'outflow' || ((movement.type === 'transfer' || movement.type === 'conversion') && qty < 0);
+
+            if (isAddition) {
+                const absQty = Math.abs(qty);
                 item.layers.push({
-                    quantity: qty,
+                    quantity: absQty,
                     cost: price,
                     date: movement.date
                 });
 
-                item.quantity += qty;
-                item.totalValue += qty * price;
-            } else if (movement.type === 'outflow') {
-                let remainingToRemove = qty;
+                item.quantity += absQty;
+                item.totalValue += absQty * price;
+            } else if (isSubtraction) {
+                let remainingToRemove = Math.abs(qty);
 
                 while (remainingToRemove > 0 && item.layers.length > 0) {
                     const oldestLayer = item.layers[0];
@@ -212,7 +216,7 @@ export default function InventoryPage() {
 
     const totalValue = filteredInventory.reduce((sum, item) => {
         const product = products?.find(p => p.id === item.productId);
-        const price = product?.price || 0;
+        const price = product?.purchase_price || 0;
 
         if (branchFilter === "all") return sum + (item.totalQuantity * price);
         const branchData = item.branches.find(b => b.branchId === branchFilter);
@@ -286,7 +290,7 @@ export default function InventoryPage() {
                     <div className="text-2xl font-bold text-green-600">
                         ${totalValue.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                     </div>
-                    <p className="text-xs text-gray-500 mt-1">Valorización (Precio de Venta)</p>
+                    <p className="text-xs text-gray-500 mt-1">Inversión (Precio de Compra)</p>
                 </div>
             </div>
 
@@ -327,7 +331,7 @@ export default function InventoryPage() {
                             <TableHead className="text-right">Cant. Total General</TableHead>
                             <TableHead className="text-right">Precio Unit. Compra</TableHead>
                             <TableHead className="text-right">Precio Unit. Venta</TableHead>
-                            <TableHead className="text-right">Valor Total</TableHead>
+                            <TableHead className="text-right">Valor Inversión</TableHead>
                             <TableHead className="text-center">Sucursales</TableHead>
                         </TableRow>
                     </TableHeader>
@@ -389,7 +393,7 @@ export default function InventoryPage() {
                                                 />
                                             </TableCell>
                                             <TableCell className="text-right font-bold text-green-600">
-                                                ${(group.totalQuantity * (product?.price || 0)).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                                                ${(group.totalQuantity * (product?.purchase_price || 0)).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                                             </TableCell>
                                             <TableCell className="text-center">
                                                 <div className="flex items-center justify-center gap-1">
@@ -436,7 +440,7 @@ export default function InventoryPage() {
                                                     />
                                                 </TableCell>
                                                 <TableCell className="text-right text-green-600 text-sm font-medium">
-                                                    ${(branch.quantity * (product?.price || 0)).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                                                    ${(branch.quantity * (product?.purchase_price || 0)).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                                                 </TableCell>
                                                 <TableCell className="text-center text-xs text-gray-500">
                                                     {branch.layers.length} capas

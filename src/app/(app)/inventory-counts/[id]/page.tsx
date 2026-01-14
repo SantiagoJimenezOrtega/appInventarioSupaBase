@@ -31,7 +31,10 @@ export default function InventoryCountDetailPage() {
 
     useEffect(() => {
         if (countData?.items) {
-            setItems(countData.items);
+            const sorted = [...countData.items].sort((a, b) =>
+                (a.product_name || "").localeCompare(b.product_name || "")
+            );
+            setItems(sorted);
         }
     }, [countData]);
 
@@ -129,18 +132,21 @@ export default function InventoryCountDetailPage() {
                 pMovements.forEach(m => {
                     const mDate = new Date(m.date);
                     const isInitialMovement = m.comment?.toLowerCase().includes('inicial') || m.comment?.toLowerCase().includes('initial');
+                    const mQty = Number(m.quantity);
+
+                    const isAddition = m.type === 'inflow' || ((m.type === 'transfer' || m.type === 'conversion') && mQty > 0);
+                    const isSubtraction = m.type === 'outflow' || ((m.type === 'transfer' || m.type === 'conversion') && mQty < 0);
 
                     if (mDate <= lastCountDate) {
-                        if (m.type === 'inflow') initial += Number(m.quantity);
-                        else if (m.type === 'outflow') initial -= Number(m.quantity);
+                        if (isAddition) initial += Math.abs(mQty);
+                        else if (isSubtraction) initial -= Math.abs(mQty);
                     } else if (isInitialMovement && !lastAppliedCount) {
-                        if (m.type === 'inflow') initial += Number(m.quantity);
-                        else if (m.type === 'outflow') initial -= Number(m.quantity);
+                        if (isAddition) initial += Math.abs(mQty);
+                        else if (isSubtraction) initial -= Math.abs(mQty);
                     } else {
                         // Regular movements after the last count
-                        // We check if it's an inflow or outflow
-                        if (m.type === 'inflow') inflows += Number(m.quantity);
-                        else if (m.type === 'outflow') outflows += Number(m.quantity);
+                        if (isAddition) inflows += Math.abs(mQty);
+                        else if (isSubtraction) outflows += Math.abs(mQty);
                     }
                 });
 
@@ -155,7 +161,10 @@ export default function InventoryCountDetailPage() {
                 };
             });
 
-            setItems(updatedItems);
+            const sortedItems = [...updatedItems].sort((a, b) =>
+                (a.product_name || "").localeCompare(b.product_name || "")
+            );
+            setItems(sortedItems);
             toast.success("Cálculo teórico actualizado. Recuerda Guardar para persistir los cambios.");
         } catch (error) {
             console.error("Error recalcular:", error);

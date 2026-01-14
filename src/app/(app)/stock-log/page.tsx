@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import { Label } from "@/components/ui/label";
 
 interface GroupedMovement {
+    id: string;
     remissionNumber: string;
     type: string;
     date: string;
@@ -79,7 +80,7 @@ export default function StockLogPage() {
     const handleEditClick = (item: any) => {
         setEditingMovement(item);
         setEditData({
-            quantity: String(item.quantity),
+            quantity: String(Math.abs(item.quantity)),
             priceAtTransaction: String(item.price_at_transaction || 0)
         });
     };
@@ -88,10 +89,11 @@ export default function StockLogPage() {
         if (!editingMovement) return;
         setIsSaving(true);
         try {
+            const originalSign = editingMovement.quantity < 0 ? -1 : 1;
             await updateMovement.mutateAsync({
                 id: editingMovement.id,
                 data: {
-                    quantity: parseFloat(editData.quantity),
+                    quantity: parseFloat(editData.quantity) * originalSign,
                     price_at_transaction: parseFloat(editData.priceAtTransaction)
                 }
             });
@@ -115,6 +117,7 @@ export default function StockLogPage() {
 
             if (!groups.has(key)) {
                 groups.set(key, {
+                    id: key,
                     remissionNumber: movement.remission_number || '-',
                     type: movement.type,
                     date: movement.date,
@@ -129,8 +132,16 @@ export default function StockLogPage() {
 
             const group = groups.get(key)!;
             group.items.push(movement);
+
+            // If any item is a transfer/conversion, the group is a transfer/conversion
+            if (movement.type === 'transfer' || movement.type === 'conversion') {
+                group.type = movement.type;
+            }
+
             group.totalProducts = group.items.length;
-            group.totalQuantity += movement.quantity || 0;
+            // For transfers/conversions, we sum absolute values but divide by 2 later or just use the inflow part?
+            // Safer: just use the absolute value of quantity for summing the total volume of the group.
+            group.totalQuantity += Math.abs(movement.quantity || 0);
         });
 
         return Array.from(groups.values()).sort((a, b) =>
@@ -159,12 +170,12 @@ export default function StockLogPage() {
     const endIndex = startIndex + itemsPerPage;
     const paginatedMovements = filteredMovements.slice(startIndex, endIndex);
 
-    const toggleRow = (remissionNumber: string) => {
+    const toggleRow = (id: string) => {
         const newExpanded = new Set(expandedRows);
-        if (newExpanded.has(remissionNumber)) {
-            newExpanded.delete(remissionNumber);
+        if (newExpanded.has(id)) {
+            newExpanded.delete(id);
         } else {
-            newExpanded.add(remissionNumber);
+            newExpanded.add(id);
         }
         setExpandedRows(newExpanded);
     };
@@ -278,12 +289,12 @@ export default function StockLogPage() {
                             </TableRow>
                         ) : (
                             paginatedMovements?.map((group) => {
-                                const isExpanded = expandedRows.has(group.remissionNumber);
+                                const isExpanded = expandedRows.has(group.id);
                                 return (
-                                    <React.Fragment key={group.remissionNumber}>
+                                    <React.Fragment key={group.id}>
                                         <TableRow
                                             className="cursor-pointer hover:bg-gray-50"
-                                            onClick={() => toggleRow(group.remissionNumber)}
+                                            onClick={() => toggleRow(group.id)}
                                         >
                                             <TableCell>
                                                 {group.totalProducts > 1 ? (
@@ -366,8 +377,8 @@ export default function StockLogPage() {
                                                     }
                                                 </TableCell>
                                                 <TableCell className="text-right font-bold">
-                                                    <span className={item.type === "inflow" ? "text-green-600" : "text-red-600"}>
-                                                        {item.type === "inflow" ? "+" : "-"}{item.quantity}
+                                                    <span className={(item.type === "inflow" || item.quantity > 0) ? "text-green-600" : "text-red-600"}>
+                                                        {(item.type === "inflow" || item.quantity > 0) ? "+" : "-"}{Math.abs(item.quantity)}
                                                     </span>
                                                 </TableCell>
                                                 <TableCell className="text-xs text-gray-500 truncate max-w-[150px]">

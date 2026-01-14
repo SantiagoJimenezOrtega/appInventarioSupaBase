@@ -355,3 +355,61 @@ export function useApplyInventoryCount() {
         },
     });
 }
+
+export function useDeleteInventoryCount() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (id: string) => {
+            const res = await fetch(`/api/inventory-counts/${id}`, {
+                method: 'DELETE',
+            });
+            if (!res.ok) throw new Error('Failed to delete inventory count');
+            return res.json();
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['inventory-counts'] });
+        },
+    });
+}
+
+// --- INVOICES & PAYMENTS ---
+export function useInvoices() {
+    return useQuery({
+        queryKey: ['invoices'],
+        queryFn: () => fetcher<any[]>('/api/invoices'),
+    });
+}
+
+export function useRegisterPayment() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (data: { invoice_id: string; amount: number; date: string }) => {
+            const res = await fetch('/api/payments', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data),
+            });
+            if (!res.ok) throw new Error(await res.text());
+            return res.json();
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['invoices'] });
+        },
+    });
+}
+
+export function useDeleteInvoice() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (id: string) => {
+            const res = await fetch(`/api/invoices/${id}`, {
+                method: 'DELETE',
+            });
+            if (!res.ok) throw new Error('Failed to delete invoice');
+            return res.json();
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['invoices'] });
+        },
+    });
+}

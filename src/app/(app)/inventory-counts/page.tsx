@@ -6,10 +6,10 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
-import { Search, Loader2, Plus, ChevronLeft, ChevronRight, ClipboardCheck, AlertTriangle, Eye, CheckCircle2, History } from "lucide-react";
+import { Search, Loader2, Plus, ChevronLeft, ChevronRight, ClipboardCheck, AlertTriangle, Eye, CheckCircle2, History, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import { useInventoryCounts, useBranches, useCreateInventoryCount, useStockMovements, useProducts } from "@/hooks/use-api";
+import { useInventoryCounts, useBranches, useCreateInventoryCount, useStockMovements, useProducts, useDeleteInventoryCount } from "@/hooks/use-api";
 import { toast } from "sonner";
 import { Label } from "@/components/ui/label";
 import Link from "next/link";
@@ -34,6 +34,7 @@ export default function InventoryCountsPage() {
     const { data: products } = useProducts();
     const { data: allMovements } = useStockMovements();
     const createCount = useCreateInventoryCount();
+    const deleteCount = useDeleteInventoryCount();
 
     const handleCreateCount = async () => {
         if (!newBranchId || !newResponsible) {
@@ -70,6 +71,19 @@ export default function InventoryCountsPage() {
         }
     };
 
+    const handleDeleteCount = async (id: string) => {
+        if (!confirm("¿Estás seguro de que deseas eliminar este corte de inventario? Esta acción no se puede deshacer.")) {
+            return;
+        }
+
+        try {
+            await deleteCount.mutateAsync(id);
+            toast.success("Corte de inventario eliminado correctamente");
+        } catch (error) {
+            toast.error("Error al eliminar el corte");
+        }
+    };
+
     const calculateTheoreticalStock = (branchId: string) => {
         if (!allMovements || !products || !counts) return [];
 
@@ -80,41 +94,47 @@ export default function InventoryCountsPage() {
 
         const lastCountDate = lastAppliedCount ? new Date(lastAppliedCount.date) : new Date(0);
 
-        return products.map(p => {
-            const productMovements = allMovements.filter(m => m.product_id === p.id && m.branch_id === branchId);
+        return [...products]
+            .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
+            .map(p => {
+                const productMovements = allMovements.filter(m => m.product_id === p.id && m.branch_id === branchId);
 
-            let initial = 0;
-            let inflows = 0;
-            let outflows = 0;
+                let initial = 0;
+                let inflows = 0;
+                let outflows = 0;
 
-            productMovements.forEach(m => {
-                const mDate = new Date(m.date);
-                const isInitialMovement = m.comment?.toLowerCase().includes('inicial') || m.comment?.toLowerCase().includes('initial');
+                productMovements.forEach(m => {
+                    const mDate = new Date(m.date);
+                    const isInitialMovement = m.comment?.toLowerCase().includes('inicial') || m.comment?.toLowerCase().includes('initial');
+                    const qty = Number(m.quantity);
 
-                if (mDate <= lastCountDate) {
-                    // Sum up everything before or at the last count date
-                    if (m.type === 'inflow') initial += Number(m.quantity);
-                    else if (m.type === 'outflow') initial -= Number(m.quantity);
-                } else if (isInitialMovement && !lastAppliedCount) {
-                    // If it's the FIRST count, treat movements with "inicial" in comment as initial stock
-                    if (m.type === 'inflow') initial += Number(m.quantity);
-                    else if (m.type === 'outflow') initial -= Number(m.quantity);
-                } else {
-                    // Regular movements after the last count
-                    if (m.type === 'inflow') inflows += Number(m.quantity);
-                    else if (m.type === 'outflow') outflows += Number(m.quantity);
-                }
+                    const isAddition = m.type === 'inflow' || ((m.type === 'transfer' || m.type === 'conversion') && qty > 0);
+                    const isSubtraction = m.type === 'outflow' || ((m.type === 'transfer' || m.type === 'conversion') && qty < 0);
+
+                    if (mDate <= lastCountDate) {
+                        // Sum up everything before or at the last count date
+                        if (isAddition) initial += Math.abs(qty);
+                        else if (isSubtraction) initial -= Math.abs(qty);
+                    } else if (isInitialMovement && !lastAppliedCount) {
+                        // If it's the FIRST count, treat movements with "inicial" in comment as initial stock
+                        if (isAddition) initial += Math.abs(qty);
+                        else if (isSubtraction) initial -= Math.abs(qty);
+                    } else {
+                        // Regular movements after the last count
+                        if (isAddition) inflows += Math.abs(qty);
+                        else if (isSubtraction) outflows += Math.abs(qty);
+                    }
+                });
+
+                return {
+                    productId: p.id,
+                    productName: p.name,
+                    initialQuantity: initial,
+                    inflowQuantity: inflows,
+                    outflowQuantity: outflows,
+                    theoreticalQuantity: initial + inflows - outflows
+                };
             });
-
-            return {
-                productId: p.id,
-                productName: p.name,
-                initialQuantity: initial,
-                inflowQuantity: inflows,
-                outflowQuantity: outflows,
-                theoreticalQuantity: initial + inflows - outflows
-            };
-        });
     };
 
     const filteredCounts = (counts || []).filter(count => {
@@ -307,11 +327,22 @@ export default function InventoryCountsPage() {
                                         )}
                                     </TableCell>
                                     <TableCell className="text-center">
-                                        <Link href={`/inventory-counts/${count.id}`}>
-                                            <Button variant="ghost" size="icon" className="text-blue-600 hover:text-blue-800 hover:bg-blue-50">
-                                                <Eye className="w-4 h-4" />
+                                        <div className="flex items-center justify-center gap-2">
+                                            <Link href={`/inventory-counts/${count.id}`}>
+                                                <Button variant="ghost" size="icon" className="text-blue-600 hover:text-blue-800 hover:bg-blue-50">
+                                                    <Eye className="w-4 h-4" />
+                                                </Button>
+                                            </Link>
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                                                onClick={() => handleDeleteCount(count.id)}
+                                                disabled={deleteCount.isPending}
+                                            >
+                                                {deleteCount.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                                             </Button>
-                                        </Link>
+                                        </div>
                                     </TableCell>
                                 </TableRow>
                             ))

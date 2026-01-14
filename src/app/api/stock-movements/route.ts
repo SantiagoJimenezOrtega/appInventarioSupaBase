@@ -86,7 +86,7 @@ export async function POST(request: Request) {
                 });
             }
 
-            if (rest.providerId && rest.dueDate) {
+            if (rest.providerId) {
                 const subtotal = (products || []).reduce((sum: number, p: any) =>
                     sum + (Number(p.quantity) * Number(p.priceAtTransaction)), 0
                 );
@@ -141,8 +141,8 @@ export async function POST(request: Request) {
                         product_name: item.productName,
                         branch_id: rest.fromBranchId,
                         branch_name: rest.fromBranchName,
-                        type: 'outflow',
-                        quantity: item.quantity,
+                        type: 'transfer',
+                        quantity: -Number(item.quantity), // Negative for outflow
                         date,
                         price_at_transaction: item.priceAtTransaction,
                         remission_number: remissionNumber,
@@ -156,8 +156,8 @@ export async function POST(request: Request) {
                         product_name: item.productName,
                         branch_id: rest.toBranchId,
                         branch_name: rest.toBranchName,
-                        type: 'inflow',
-                        quantity: item.quantity,
+                        type: 'transfer',
+                        quantity: Number(item.quantity), // Positive for inflow
                         date,
                         price_at_transaction: item.priceAtTransaction,
                         remission_number: remissionNumber,
@@ -174,8 +174,8 @@ export async function POST(request: Request) {
                 product_name: rest.fromProductName,
                 branch_id: rest.branchId,
                 branch_name: rest.branchName,
-                type: 'outflow',
-                quantity: rest.fromQuantity,
+                type: 'conversion',
+                quantity: -Number(rest.fromQuantity), // Negative for outflow
                 date,
                 price_at_transaction: rest.priceAtTransaction,
                 remission_number: remissionNumber,
@@ -187,8 +187,8 @@ export async function POST(request: Request) {
                 product_name: rest.toProductName,
                 branch_id: rest.branchId,
                 branch_name: rest.branchName,
-                type: 'inflow',
-                quantity: rest.toQuantity,
+                type: 'conversion',
+                quantity: Number(rest.toQuantity), // Positive for inflow
                 date,
                 price_at_transaction: rest.priceAtTransaction,
                 remission_number: remissionNumber,
