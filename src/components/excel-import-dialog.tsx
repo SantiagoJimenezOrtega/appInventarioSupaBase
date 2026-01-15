@@ -118,7 +118,8 @@ export function ExcelImportDialog({ type }: ExcelImportProps) {
                     const payload = {
                         name: row['Nombre'] || row['Name'] || row['nombre'] || row['name'] || row['Nombre del Proveedor'],
                         contact_person: row['Contacto'] || row['Contact'] || row['contacto'] || row['contact'] || row['Encargado / Contacto'] || '',
-                        contact_number: row['Teléfono'] || row['Phone'] || row['telefono'] || row['phone'] || row['Número de Contacto'] || ''
+                        contact_number: row['Teléfono'] || row['Phone'] || row['telefono'] || row['phone'] || row['Número de Contacto'] || '',
+                        email: row['Email'] || row['email'] || row['Correo'] || row['correo'] || row['Correo Electrónico'] || ''
                     };
                     if (!payload.name) {
                         // Skip empty rows silently

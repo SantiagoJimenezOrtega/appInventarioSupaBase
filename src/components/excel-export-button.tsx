@@ -33,11 +33,12 @@ export function ExcelExportButton({ type, data, fileName }: ExcelExportButtonPro
                 'Encargado': item.encargado || ''
             }));
         } else if (type === 'providers') {
-            headers = ['Nombre', 'Contacto', 'Teléfono'];
+            headers = ['Nombre', 'Contacto', 'Teléfono', 'Email'];
             formattedData = data.map(item => ({
                 'Nombre': item.name,
                 'Contacto': item.contact_person || '',
-                'Teléfono': item.contact_number || ''
+                'Teléfono': item.contact_number || '',
+                'Email': item.email || ''
             }));
         }
 

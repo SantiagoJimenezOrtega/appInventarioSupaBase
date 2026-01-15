@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Plus, Search, Loader2, Phone, User, ChevronLeft, ChevronRight, Pencil, Trash2 } from "lucide-react";
+import { Plus, Search, Loader2, Phone, User, ChevronLeft, ChevronRight, Pencil, Trash2, Mail } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -18,6 +18,7 @@ const providerSchema = z.object({
     name: z.string().min(2, "El nombre es requerido"),
     contact_person: z.string().optional(),
     contact_number: z.string().optional(),
+    email: z.string().email("Email inválido").optional().or(z.literal("")),
 });
 
 import { ExcelImportDialog } from "@/components/excel-import-dialog";
@@ -38,6 +39,7 @@ export default function ProvidersPage() {
             name: "",
             contact_person: "",
             contact_number: "",
+            email: "",
         },
     });
 
@@ -74,6 +76,7 @@ export default function ProvidersPage() {
             name: provider.name,
             contact_person: provider.contact_person || "",
             contact_number: provider.contact_number || "",
+            email: provider.email || "",
         });
         setIsOpen(true);
     };
@@ -84,6 +87,7 @@ export default function ProvidersPage() {
             name: "",
             contact_person: "",
             contact_number: "",
+            email: "",
         });
         setIsOpen(true);
     };
@@ -164,6 +168,19 @@ export default function ProvidersPage() {
                                             )}
                                         />
                                     </div>
+                                    <FormField
+                                        control={form.control}
+                                        name="email"
+                                        render={({ field }) => (
+                                            <FormItem>
+                                                <FormLabel>Correo Electrónico</FormLabel>
+                                                <FormControl>
+                                                    <Input type="email" placeholder="ejemplo@correo.com" {...field} />
+                                                </FormControl>
+                                                <FormMessage />
+                                            </FormItem>
+                                        )}
+                                    />
                                     <Button type="submit" className="w-full" disabled={createProvider.isPending || updateProvider.isPending}>
                                         {(createProvider.isPending || updateProvider.isPending) && <Loader2 className="animate-spin mr-2" />}
                                         {editingProvider ? "Actualizar Proveedor" : "Guardar Proveedor"}
@@ -191,6 +208,7 @@ export default function ProvidersPage() {
                             <TableHead>Nombre</TableHead>
                             <TableHead>Persona de Contacto</TableHead>
                             <TableHead>Teléfono</TableHead>
+                            <TableHead>Email</TableHead>
                             <TableHead className="text-center w-24">Acciones</TableHead>
                         </TableRow>
                     </TableHeader>
@@ -222,6 +240,13 @@ export default function ProvidersPage() {
                                         {provider.contact_number ? (
                                             <div className="flex items-center gap-2 text-sm text-gray-600">
                                                 <Phone className="h-3 w-3" /> {provider.contact_number}
+                                            </div>
+                                        ) : '-'}
+                                    </TableCell>
+                                    <TableCell>
+                                        {provider.email ? (
+                                            <div className="flex items-center gap-2 text-sm text-gray-600">
+                                                <Mail className="h-3 w-3" /> {provider.email}
                                             </div>
                                         ) : '-'}
                                     </TableCell>

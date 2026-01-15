@@ -90,19 +90,37 @@ export async function POST(request: Request) {
                 const subtotal = (products || []).reduce((sum: number, p: any) =>
                     sum + (Number(p.quantity) * Number(p.priceAtTransaction)), 0
                 );
-                const totalAmount = subtotal + (Number(rest.iva) || 0) - (Number(rest.retefuente) || 0);
 
-                invoiceToInsert = {
-                    remission_number: remissionNumber,
-                    date,
-                    provider_id: rest.providerId,
-                    provider_name: rest.providerName,
-                    total_amount: totalAmount,
-                    payment_status: 'Pendiente',
-                    due_date: rest.dueDate,
-                    iva: rest.iva || 0,
-                    retefuente: rest.retefuente || 0
-                };
+                // Check if invoice already exists to update it instead of creating duplicate
+                const { data: existingInvoice } = await supabase
+                    .from('payable_invoices')
+                    .select('id, total_amount')
+                    .eq('remission_number', remissionNumber)
+                    .maybeSingle();
+
+                if (existingInvoice) {
+                    const currentTotal = Number(existingInvoice.total_amount || 0);
+                    const newSubtotal = subtotal + (Number(rest.iva) || 0) - (Number(rest.retefuente) || 0);
+                    const newTotal = currentTotal + newSubtotal;
+
+                    await supabase
+                        .from('payable_invoices')
+                        .update({ total_amount: newTotal })
+                        .eq('id', existingInvoice.id);
+                } else {
+                    const totalAmount = subtotal + (Number(rest.iva) || 0) - (Number(rest.retefuente) || 0);
+                    invoiceToInsert = {
+                        remission_number: remissionNumber,
+                        date,
+                        provider_id: rest.providerId,
+                        provider_name: rest.providerName,
+                        total_amount: totalAmount,
+                        payment_status: 'Pendiente',
+                        due_date: rest.dueDate,
+                        iva: rest.iva || 0,
+                        retefuente: rest.retefuente || 0
+                    };
+                }
             }
         }
         else if (type === 'outflow') {

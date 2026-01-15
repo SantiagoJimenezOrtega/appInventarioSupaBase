@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
-import { useStockMovements, useDeleteStockMovement, useUpdateStockMovement, useDeleteRemission, useUpdateRemission } from "@/hooks/use-api";
+import { useStockMovements, useDeleteStockMovement, useUpdateStockMovement, useDeleteRemission, useUpdateRemission, useBranches } from "@/hooks/use-api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -13,6 +14,7 @@ import { es } from "date-fns/locale";
 import { MovementForm } from "@/components/movement-form";
 import { toast } from "sonner";
 import { Label } from "@/components/ui/label";
+import { AddItemDialog } from "@/components/stock/add-item-dialog";
 
 interface GroupedMovement {
     id: string;
@@ -29,7 +31,7 @@ interface GroupedMovement {
 
 export default function StockLogPage() {
     const [searchTerm, setSearchTerm] = useState("");
-    const [typeFilter, setTypeFilter] = useState<string>("all");
+    const [typeFilters, setTypeFilters] = useState<string[]>([]);
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(25);
@@ -40,7 +42,17 @@ export default function StockLogPage() {
     const [editData, setEditData] = useState({ quantity: "0", priceAtTransaction: "0" });
     const [isSaving, setIsSaving] = useState(false);
 
+    const [dateFrom, setDateFrom] = useState("");
+    const [dateTo, setDateTo] = useState("");
+    const [branchFilter, setBranchFilter] = useState("all");
+    const [clientFilter, setClientFilter] = useState("");
+    const [isFormDirty, setIsFormDirty] = useState(false);
+
+    const [addingItemTo, setAddingItemTo] = useState<any>(null);
+    const [itemToAddAround, setItemToAddAround] = useState<{ targetItem: any, group: GroupedMovement } | null>(null);
+
     const { data: movements, isLoading } = useStockMovements();
+    const { data: branches } = useBranches();
     const deleteMovement = useDeleteStockMovement();
     const updateMovement = useUpdateStockMovement();
     const deleteRemission = useDeleteRemission();
@@ -147,7 +159,20 @@ export default function StockLogPage() {
             group.totalQuantity += movement.quantity || 0;
         });
 
-        return Array.from(groups.values()).sort((a, b) =>
+        // Sort items within each group and then update totalProducts and totalQuantity
+        const sortedGroups = Array.from(groups.values()).map(group => {
+            group.items.sort((a: any, b: any) => {
+                if (a.index_in_transaction !== b.index_in_transaction) {
+                    return (a.index_in_transaction || 0) - (b.index_in_transaction || 0);
+                }
+                return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+            });
+            group.totalProducts = group.items.length;
+            group.totalQuantity = group.items.reduce((sum, item) => sum + (item.quantity || 0), 0);
+            return group;
+        });
+
+        return sortedGroups.sort((a, b) =>
             new Date(b.date).getTime() - new Date(a.date).getTime()
         );
     }, [movements]);
@@ -159,12 +184,26 @@ export default function StockLogPage() {
                 item.product_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                 item.branch_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                 item.remission_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                item.provider_name?.toLowerCase().includes(searchTerm.toLowerCase())
+                item.provider_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                item.comment?.toLowerCase().includes(searchTerm.toLowerCase())
             );
 
-        const matchesType = typeFilter === "all" || m.type === typeFilter;
+        const matchesType = typeFilters.length === 0 || typeFilters.includes(m.type);
 
-        return matchesSearch && matchesType;
+        const movementDate = new Date(m.date);
+        const matchesFrom = !dateFrom || movementDate >= new Date(dateFrom);
+        const matchesTo = !dateTo || movementDate <= new Date(dateTo);
+
+        const matchesBranch = branchFilter === "all" || m.branchName === branches?.find((b: any) => b.id === branchFilter)?.name;
+
+        const matchesClient = !clientFilter ||
+            m.providerName?.toLowerCase().includes(clientFilter.toLowerCase()) ||
+            m.comment?.toLowerCase().includes(clientFilter.toLowerCase()) ||
+            m.items.some(item =>
+                item.comment?.toLowerCase().includes(clientFilter.toLowerCase())
+            );
+
+        return matchesSearch && matchesType && matchesFrom && matchesTo && matchesBranch && matchesClient;
     });
 
     // Pagination
@@ -229,40 +268,188 @@ export default function StockLogPage() {
                             <Plus className="mr-2 h-4 w-4" /> Nuevo Movimiento
                         </Button>
                     </DialogTrigger>
-                    <DialogContent className="max-w-[1200px] w-[95vw]">
+                    <DialogContent
+                        className="max-w-[1400px] w-[98vw]"
+                        showCloseButton={false}
+                        onPointerDownOutside={(e) => {
+                            if (isFormDirty) {
+                                e.preventDefault();
+                                toast.warning("Tienes cambios sin guardar. Usa el botón 'Cancelar / Salir' del formulario.");
+                            }
+                        }}
+                        onEscapeKeyDown={(e) => {
+                            if (isFormDirty) {
+                                e.preventDefault();
+                                toast.warning("Tienes cambios sin guardar. Usa el botón 'Cancelar / Salir' del formulario.");
+                            }
+                        }}
+                    >
                         <DialogHeader>
-                            <DialogTitle>Registrar Movimiento</DialogTitle>
+                            <DialogTitle>{addingItemTo ? `Añadir item a remisión: ${addingItemTo.remissionNumber}` : 'Registrar Movimiento'}</DialogTitle>
                         </DialogHeader>
-                        <MovementForm onSuccess={() => setIsDialogOpen(false)} />
+                        <MovementForm
+                            onSuccess={() => {
+                                setIsDialogOpen(false);
+                                setAddingItemTo(null);
+                                setIsFormDirty(false);
+                            }}
+                            onCancel={() => {
+                                setIsDialogOpen(false);
+                                setAddingItemTo(null);
+                                setIsFormDirty(false);
+                            }}
+                            onDirtyChange={setIsFormDirty}
+                            initialData={addingItemTo ? {
+                                type: addingItemTo.type,
+                                remissionNumber: addingItemTo.remissionNumber,
+                                branchId: branches?.find((b: any) => b.name === addingItemTo.branchName)?.id,
+                                providerId: addingItemTo.items[0]?.provider_id,
+                                clientType: addingItemTo.items[0]?.client_type,
+                                remisionReference: addingItemTo.items[0]?.remision_reference,
+                                fromBranchId: addingItemTo.items[0]?.from_branch_id || branches?.find((b: any) => b.name === addingItemTo.branchName)?.id,
+                                toBranchId: addingItemTo.items[0]?.to_branch_id,
+                                date: addingItemTo.date,
+                                comment: addingItemTo.comment,
+                                products: [
+                                    ...addingItemTo.items.map((item: any, i: number) => ({
+                                        product_id: item.product_id,
+                                        quantity: item.quantity,
+                                        price_at_transaction: item.price_at_transaction,
+                                        isExisting: true,
+                                        tempId: `existing-${item.id || i}`
+                                    })),
+                                    { product_id: "", quantity: "", price_at_transaction: "", tempId: `new-${Date.now()}` }
+                                ]
+                            } : null}
+                        />
                     </DialogContent>
                 </Dialog>
+
+                {/* QUICK ADD ITEM DIALOG */}
+                {itemToAddAround && (
+                    <AddItemDialog
+                        open={!!itemToAddAround}
+                        onOpenChange={(open) => !open && setItemToAddAround(null)}
+                        targetItem={itemToAddAround.targetItem}
+                        group={itemToAddAround.group}
+                        onSuccess={() => {
+                            setItemToAddAround(null);
+                            // Optional: refetch or invalidate queries is handled by the hook
+                        }}
+                    />
+                )}
             </div>
 
             {/* Filters */}
-            <div className="flex flex-col sm:flex-row gap-4">
-                <div className="flex items-center gap-2 flex-1">
-                    <Search className="h-4 w-4 text-gray-500" />
-                    <Input
-                        placeholder="Buscar por producto, sucursal o remisión..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                    />
+            <div className="bg-white p-4 rounded-xl border shadow-sm space-y-4">
+                <div className="flex flex-col md:flex-row gap-4">
+                    <div className="flex-1">
+                        <Label className="text-xs font-semibold mb-1 block">Buscar</Label>
+                        <div className="relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                            <Input
+                                placeholder="Producto, sucursal, remisión..."
+                                className="pl-9 h-10"
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                            />
+                        </div>
+                    </div>
+                    <div className="w-full md:w-48">
+                        <Label className="text-xs font-semibold mb-1 block">Sede / Seccional</Label>
+                        <Select value={branchFilter} onValueChange={setBranchFilter}>
+                            <SelectTrigger className="h-10">
+                                <SelectValue placeholder="Todas las sedes" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">Todas las sedes</SelectItem>
+                                {branches?.map((b: any) => (
+                                    <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <div className="w-full md:w-48">
+                        <Label className="text-xs font-semibold mb-1 block">Cliente / Proveedor</Label>
+                        <Input
+                            placeholder="Nombre..."
+                            className="h-10"
+                            value={clientFilter}
+                            onChange={(e) => setClientFilter(e.target.value)}
+                        />
+                    </div>
                 </div>
-                <div className="flex items-center gap-2">
-                    <Filter className="h-4 w-4 text-gray-500" />
-                    <Select value={typeFilter} onValueChange={setTypeFilter}>
-                        <SelectTrigger className="w-[180px]">
-                            <SelectValue placeholder="Tipo" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">Todos</SelectItem>
-                            <SelectItem value="inflow">Entradas</SelectItem>
-                            <SelectItem value="outflow">Salidas</SelectItem>
-                            <SelectItem value="transfer">Traslados</SelectItem>
-                            <SelectItem value="conversion">Conversiones</SelectItem>
-                            <SelectItem value="adjustment">Ajustes</SelectItem>
-                        </SelectContent>
-                    </Select>
+
+                <div className="flex flex-col md:flex-row gap-4 items-end">
+                    <div className="grid grid-cols-2 gap-2 flex-1">
+                        <div>
+                            <Label className="text-xs font-semibold mb-1 block">Desde</Label>
+                            <Input
+                                type="date"
+                                className="h-10"
+                                value={dateFrom}
+                                onChange={(e) => setDateFrom(e.target.value)}
+                            />
+                        </div>
+                        <div>
+                            <Label className="text-xs font-semibold mb-1 block">Hasta</Label>
+                            <Input
+                                type="date"
+                                className="h-10"
+                                value={dateTo}
+                                onChange={(e) => setDateTo(e.target.value)}
+                            />
+                        </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 pb-0.5">
+                        {[
+                            { id: 'inflow', label: 'Entradas', color: 'bg-green-100 text-green-800' },
+                            { id: 'outflow', label: 'Salidas', color: 'bg-red-100 text-red-800' },
+                            { id: 'transfer', label: 'Traslados', color: 'bg-blue-100 text-blue-800' },
+                            { id: 'conversion', label: 'Conversiones', color: 'bg-purple-100 text-purple-800' },
+                            { id: 'adjustment', label: 'Ajustes', color: 'bg-amber-100 text-amber-800' },
+                        ].map((type) => {
+                            const isSelected = typeFilters.includes(type.id);
+                            return (
+                                <Button
+                                    key={type.id}
+                                    variant={isSelected ? "default" : "outline"}
+                                    size="sm"
+                                    className={cn(
+                                        "rounded-full h-9",
+                                        isSelected ? "" : "text-gray-500 border-gray-200"
+                                    )}
+                                    onClick={() => {
+                                        setTypeFilters(prev =>
+                                            prev.includes(type.id)
+                                                ? prev.filter(t => t !== type.id)
+                                                : [...prev, type.id]
+                                        );
+                                        setCurrentPage(1);
+                                    }}
+                                >
+                                    {type.label}
+                                </Button>
+                            );
+                        })}
+                        {(typeFilters.length > 0 || searchTerm || dateFrom || dateTo || branchFilter !== "all" || clientFilter) && (
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-gray-400 hover:text-red-500 h-9"
+                                onClick={() => {
+                                    setTypeFilters([]);
+                                    setSearchTerm("");
+                                    setDateFrom("");
+                                    setDateTo("");
+                                    setBranchFilter("all");
+                                    setClientFilter("");
+                                }}
+                            >
+                                <RefreshCw className="w-3 h-3 mr-1" /> Limpiar
+                            </Button>
+                        )}
+                    </div>
                 </div>
             </div>
 
@@ -340,21 +527,6 @@ export default function StockLogPage() {
                                                     <Button
                                                         variant="ghost"
                                                         size="icon"
-                                                        className="h-8 w-8 text-blue-600 hover:text-blue-800 hover:bg-blue-50"
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            if (group.totalProducts === 1) {
-                                                                handleEditClick(group.items[0]);
-                                                            } else {
-                                                                toast.info("Para editar cantidades de productos individuales, expande la fila.");
-                                                            }
-                                                        }}
-                                                    >
-                                                        <Pencil className="w-4 h-4" />
-                                                    </Button>
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="icon"
                                                         className="h-8 w-8 text-red-600 hover:text-red-800 hover:bg-red-50"
                                                         onClick={(e) => {
                                                             e.stopPropagation();
@@ -393,6 +565,18 @@ export default function StockLogPage() {
                                                 </TableCell>
                                                 <TableCell className="text-right">
                                                     <div className="flex items-center justify-end gap-1">
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="h-7 w-7 text-green-600 hover:text-green-800 hover:bg-green-50"
+                                                            title="Añadir ítem a esta remisión"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setItemToAddAround({ targetItem: item, group });
+                                                            }}
+                                                        >
+                                                            <Plus className="w-3.5 h-3.5" />
+                                                        </Button>
                                                         <Button
                                                             variant="ghost"
                                                             size="icon"

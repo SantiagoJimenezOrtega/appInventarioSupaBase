@@ -1,4 +1,4 @@
-import { AIInsights } from "@/components/ai-insights";
+import { AIChat } from "@/components/ai-chat";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { DollarSign, Package, TrendingUp, AlertTriangle } from "lucide-react";
 
@@ -7,7 +7,7 @@ export default function DashboardPage() {
         <div className="space-y-6">
             <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
 
-            <AIInsights />
+            <AIChat />
 
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
                 <Card>

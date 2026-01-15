@@ -20,6 +20,7 @@ export interface Provider {
     name: string;
     contact_person?: string;
     contact_number?: string;
+    email?: string;
     created_at?: string;
 }
 
