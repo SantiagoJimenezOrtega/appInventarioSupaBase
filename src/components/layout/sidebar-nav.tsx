@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import {
     LayoutDashboard,
@@ -33,13 +34,32 @@ export default function SidebarNav() {
         { title: "Sugerencias IA", href: "/stock-balancing", icon: TrendingUp },
     ];
 
+    const [logoUrl, setLogoUrl] = useState<string | null>(null);
+
+    useEffect(() => {
+        const loadLogo = () => {
+            const storedLogo = localStorage.getItem("app_logo_url");
+            setLogoUrl(storedLogo);
+        };
+
+        loadLogo();
+        window.addEventListener('storage', loadLogo);
+        return () => window.removeEventListener('storage', loadLogo);
+    }, []);
+
     return (
         <aside className="hidden md:flex w-64 flex-col bg-white border-r min-h-screen">
-            <div className="p-6 flex items-center gap-2 border-b">
-                <div className="bg-primary/20 p-2 rounded-full">
-                    <Sprout className="w-6 h-6 text-primary" />
-                </div>
-                <span className="font-bold text-lg tracking-tight">AgroInv</span>
+            <div className="p-6 flex items-center gap-2 border-b h-20">
+                {logoUrl ? (
+                    <img src={logoUrl} alt="Logo" className="h-10 object-contain w-full" />
+                ) : (
+                    <>
+                        <div className="bg-primary/10 p-2 rounded-full">
+                            <Sprout className="w-6 h-6 text-primary" />
+                        </div>
+                        <span className="font-bold text-lg tracking-tight">AgroInsumos</span>
+                    </>
+                )}
             </div>
 
             <nav className="flex-1 p-4 space-y-1 overflow-y-auto">

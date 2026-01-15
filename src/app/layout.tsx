@@ -10,7 +10,7 @@ const outfit = Outfit({
 });
 
 export const metadata: Metadata = {
-  title: "Sistema AgroInv",
+  title: "Sistema AgroInsumos",
   description: "Gestión de inventario para agronegocios",
 };
 

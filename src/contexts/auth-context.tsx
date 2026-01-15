@@ -16,12 +16,14 @@ interface User {
     email: string;
     name: string;
     role: string;
+    avatar_url?: string;
 }
 
 interface AuthContextType {
     user: User | null;
     login: (email: string, pass: string) => Promise<void>;
     logout: () => void;
+    updateProfile: (data: Partial<User> & { password?: string }) => void;
     isLoading: boolean;
 }
 
@@ -49,8 +51,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Simulate API delay
         await new Promise(r => setTimeout(r, 500));
 
-        if (email === ADMIN_USER.email && pass === ADMIN_USER.password) {
-            const u = { ...ADMIN_USER };
+        // Load custom creds if any, else default
+        const storedCreds = localStorage.getItem('admin_credentials');
+        const validCreds = storedCreds ? JSON.parse(storedCreds) : ADMIN_USER;
+
+        if (email === validCreds.email && pass === validCreds.password) {
+            const u = { ...validCreds };
             // @ts-ignore
             delete u.password;
             setUser(u);
@@ -69,12 +75,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         router.push('/login');
     };
 
+    const updateProfile = (data: Partial<User> & { password?: string }) => {
+        if (!user) return;
+
+        const updatedUser = { ...user, ...data };
+        // @ts-ignore
+        const { password, ...safeUser } = updatedUser;
+
+        setUser(safeUser as User);
+        localStorage.setItem('currentUser', JSON.stringify(safeUser));
+
+        // Persist login credentials
+        const storedCreds = localStorage.getItem('admin_credentials');
+        const currentCreds = storedCreds ? JSON.parse(storedCreds) : ADMIN_USER;
+
+        const newCreds = {
+            ...currentCreds,
+            name: data.name || currentCreds.name,
+            email: data.email || currentCreds.email,
+            avatar_url: data.avatar_url || currentCreds.avatar_url,
+            password: data.password || currentCreds.password
+        };
+
+        localStorage.setItem('admin_credentials', JSON.stringify(newCreds));
+    };
+
     return (
-        <AuthContext.Provider value={{ user, login, logout, isLoading }}>
+        <AuthContext.Provider value={{ user, login, logout, updateProfile, isLoading }}>
             {children}
         </AuthContext.Provider>
     );
 }
+
 
 export function useAuth() {
     const context = useContext(AuthContext);

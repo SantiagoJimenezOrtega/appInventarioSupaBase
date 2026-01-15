@@ -2,7 +2,7 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider } from "@/contexts/auth-context";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Toaster } from "@/components/ui/sonner"; // Using Sonner usually or Toaster
 
 export function Providers({ children }: { children: React.ReactNode }) {
@@ -14,11 +14,19 @@ export function Providers({ children }: { children: React.ReactNode }) {
         },
     }));
 
+    useEffect(() => {
+        // Load theme color preference
+        const savedTheme = localStorage.getItem("app_theme_color");
+        if (savedTheme) {
+            document.documentElement.style.setProperty('--primary', savedTheme);
+        }
+    }, []);
+
     return (
         <QueryClientProvider client={queryClient}>
             <AuthProvider>
                 {children}
-                {/* <Toaster /> if I had one */}
+                <Toaster />
             </AuthProvider>
         </QueryClientProvider>
     );

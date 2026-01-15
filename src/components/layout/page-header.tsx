@@ -10,8 +10,8 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { LogOut, Menu } from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { LogOut, Menu, Settings } from "lucide-react";
 
 export default function PageHeader({ user }: { user: any }) {
     const { logout } = useAuth();
@@ -34,6 +34,7 @@ export default function PageHeader({ user }: { user: any }) {
                     <DropdownMenuTrigger asChild>
                         <Button variant="ghost" className="relative h-10 w-10 rounded-full">
                             <Avatar>
+                                <AvatarImage src={user?.avatar_url} alt={user?.name} className="object-cover" />
                                 <AvatarFallback className="bg-primary/20 text-primary font-bold">
                                     {user?.name?.charAt(0).toUpperCase()}
                                 </AvatarFallback>
@@ -42,6 +43,11 @@ export default function PageHeader({ user }: { user: any }) {
                     </DropdownMenuTrigger>
                     <DropdownMenuContent className="w-56" align="end" forceMount>
                         <DropdownMenuLabel>Mi Cuenta</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem className="cursor-pointer" onClick={() => window.location.href = '/settings'}>
+                            <Settings className="mr-2 h-4 w-4" />
+                            <span>Configuración</span>
+                        </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem className="text-red-500 cursor-pointer" onClick={logout}>
                             <LogOut className="mr-2 h-4 w-4" />
