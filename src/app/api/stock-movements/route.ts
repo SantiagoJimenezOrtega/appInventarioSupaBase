@@ -217,10 +217,43 @@ export async function POST(request: Request) {
 
         // EXECUTE
         if (movementsToInsert.length > 0) {
-            const { error: movError } = await supabase.from('stock_movements').insert(movementsToInsert);
-            if (movError) {
-                console.error('StockMovement Insert Error:', movError);
-                return NextResponse.json({ error: movError.message }, { status: 500 });
+            // Handle insertion at specific index (Re-indexing strategy)
+            if (typeof rest.insertAtIndex === 'number') {
+                // 1. Shift existing items down to make space.
+                const { data: itemsToShift } = await supabase
+                    .from('stock_movements')
+                    .select('id, index_in_transaction')
+                    .eq('remission_number', remissionNumber)
+                    .gte('index_in_transaction', rest.insertAtIndex)
+                    .order('index_in_transaction', { ascending: false });
+
+                if (itemsToShift && itemsToShift.length > 0) {
+                    for (const item of itemsToShift) {
+                        await supabase
+                            .from('stock_movements')
+                            .update({ index_in_transaction: item.index_in_transaction + movementsToInsert.length })
+                            .eq('id', item.id);
+                    }
+                }
+
+                // 2. Insert new items at the specific index
+                const finalInserts = movementsToInsert.map((m, i) => ({
+                    ...m,
+                    index_in_transaction: rest.insertAtIndex + i
+                }));
+
+                const { error: movError } = await supabase.from('stock_movements').insert(finalInserts);
+                if (movError) {
+                    console.error('StockMovement Insert Error:', movError);
+                    return NextResponse.json({ error: movError.message }, { status: 500 });
+                }
+            } else {
+                // Standard Insert (Append or New)
+                const { error: movError } = await supabase.from('stock_movements').insert(movementsToInsert);
+                if (movError) {
+                    console.error('StockMovement Insert Error:', movError);
+                    return NextResponse.json({ error: movError.message }, { status: 500 });
+                }
             }
         }
 
@@ -267,10 +300,46 @@ export async function PATCH(request: Request) {
     try {
         const { searchParams } = new URL(request.url);
         const remissionNumber = searchParams.get('remissionNumber');
+        const id = searchParams.get('id');
         const body = await request.json();
 
+        if (id) {
+            // Update specific movement
+            const { error } = await supabase
+                .from('stock_movements')
+                .update(body)
+                .eq('id', id);
+
+            if (error) throw error;
+
+            // Recalculate invoice if quantity or price changed
+            if (body.quantity || body.price_at_transaction) {
+                const { data: movement } = await supabase
+                    .from('stock_movements')
+                    .select('remission_number, type')
+                    .eq('id', id)
+                    .single();
+
+                if (movement && movement.type === 'inflow') {
+                    const { data: allItems } = await supabase
+                        .from('stock_movements')
+                        .select('quantity, price_at_transaction')
+                        .eq('remission_number', movement.remission_number);
+
+                    const newTotal = allItems?.reduce((sum, item) => sum + (Number(item.quantity) * Number(item.price_at_transaction)), 0) || 0;
+
+                    await supabase
+                        .from('payable_invoices')
+                        .update({ total_amount: newTotal })
+                        .eq('remission_number', movement.remission_number);
+                }
+            }
+
+            return NextResponse.json({ success: true });
+        }
+
         if (!remissionNumber) {
-            return NextResponse.json({ error: "Missing remissionNumber" }, { status: 400 });
+            return NextResponse.json({ error: "Missing remissionNumber or id" }, { status: 400 });
         }
 
         const { error } = await supabase

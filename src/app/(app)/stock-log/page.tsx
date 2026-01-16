@@ -269,7 +269,7 @@ export default function StockLogPage() {
                         </Button>
                     </DialogTrigger>
                     <DialogContent
-                        className="max-w-[1400px] w-[98vw]"
+                        className="!w-[75vw] !max-w-none max-h-[90vh] overflow-y-auto"
                         showCloseButton={false}
                         onPointerDownOutside={(e) => {
                             if (isFormDirty) {

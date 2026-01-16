@@ -238,27 +238,38 @@ export function MovementForm({ onSuccess, onCancel, onDirtyChange, initialData }
 
         if (!currentData) return;
 
-        const branch = branches?.find(b => b.id === (currentData.branchId || currentData.fromBranchId));
+        // Validation for Database Compliance (Drafts still need valid DB keys)
+        const hasBranch = currentData.branchId || currentData.fromBranchId;
+        const validProducts = Array.isArray(currentData.products)
+            ? currentData.products.filter((p: any) => p.productId && p.productId.trim() !== '')
+            : [];
+
+        if (!hasBranch || validProducts.length === 0) {
+            toast.error("Para guardar un borrador, selecciona al menos una Sucursal y un Producto válido.");
+            setShowExitConfirm(false); // Close confirmation to let them fix it
+            return;
+        }
 
         const payload = {
             ...currentData,
             type: activeTab,
             comment: `[BORRADOR] ${currentData.comment || ""}`,
-            products: Array.isArray(currentData.products) ? currentData.products.map((p: any) => {
+            products: validProducts.map((p: any) => {
                 const product = products?.find(prod => prod.id === p.productId);
                 return {
-                    ...p,
-                    productName: product?.name,
+                    productId: p.productId,
+                    productName: product?.name || "Desconocido",
                     quantity: Number(p.quantity) || 0,
                     priceAtTransaction: Number(p.priceAtTransaction) || 0
                 };
-            }) : []
+            })
         };
 
         try {
             await createMovement.mutateAsync(payload);
+            toast.success("Borrador guardado exitosamente");
             setIsDirty(false);
-            toast.success("Movimiento guardado como BORRADOR");
+            setShowExitConfirm(false);
             onSuccess();
         } catch (error: any) {
             toast.error("Error al guardar borrador: " + error.message);
@@ -1252,15 +1263,6 @@ export function MovementForm({ onSuccess, onCancel, onDirtyChange, initialData }
                                 Guardar y Registrar Ahora
                             </Button>
 
-                            <Button
-                                variant="outline"
-                                className="w-full border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 h-12 text-base shadow-sm transition-all"
-                                onClick={handleSaveDraft}
-                                disabled={createMovement.isPending}
-                            >
-                                <FileText className="w-5 h-5 mr-3" />
-                                Guardar como Borrador
-                            </Button>
                         </div>
 
                         <div className="flex flex-col sm:flex-row gap-3 pt-4 border-t mt-4">

@@ -127,17 +127,51 @@ export function AddItemDialog({ open, onOpenChange, targetItem, group, onSuccess
             // We send JUST the new product.
             // The backend (as modified in previous step) handles checking for invoice existence.
 
-            const payload = {
+            // Enhance payload with fallback lookup from group items
+            const referenceItem = group.items?.[0] || targetItem;
+
+            // Parse existing comment to recover client context for Outflows
+            let resolvedClientType = group.clientType || referenceItem?.client_type;
+            let resolvedComment = referenceItem?.comment || "";
+            let electronicInvoiceNumber = "";
+            let remisionReference = "";
+
+            if (!resolvedClientType && activeType === 'outflow' && resolvedComment) {
+                if (resolvedComment.startsWith("Venta en mostrador")) {
+                    resolvedClientType = "mostrador";
+                } else if (resolvedComment.startsWith("Fact. Elec. N°")) {
+                    resolvedClientType = "electronica";
+                    // Extract number? "Fact. Elec. N° 123 - ..."
+                    const match = resolvedComment.match(/N°\s*(\S+)/);
+                    if (match) electronicInvoiceNumber = match[1];
+                } else if (resolvedComment.startsWith("Remisión Ref:")) {
+                    resolvedClientType = "remision";
+                    const match = resolvedComment.match(/Ref:\s*(\S+)/);
+                    if (match) remisionReference = match[1];
+                } else if (resolvedComment.startsWith("Cliente:")) {
+                    // Extract "Juan" from "Cliente: Juan - Some comment"
+                    const prefixPart = resolvedComment.split(" - ")[0];
+                    resolvedClientType = prefixPart.replace("Cliente: ", "").trim();
+                }
+            }
+
+            const payload: any = {
                 type: activeType,
-                date: group.date, // Keep original date
+                date: group.date,
                 remissionNumber: group.remissionNumber,
-                branchId: group.branchId, // Need these from group
-                branchName: group.branchName,
-                providerId: group.providerId, // Need these
-                providerName: group.providerName,
-                // For outflow
-                clientType: group.clientType,
-                // ... other fields might be needed from group.items[0] if group is sparse
+                branchId: group.branchId || referenceItem?.branch_id,
+                branchName: group.branchName || referenceItem?.branch_name,
+                providerId: group.providerId || referenceItem?.provider_id,
+                providerName: group.providerName || referenceItem?.provider_name,
+
+                clientType: resolvedClientType,
+                electronicInvoiceNumber,
+                remisionReference,
+
+                // Pass insertion intent
+                insertAtIndex: position === 'above'
+                    ? (targetItem.index_in_transaction || 0)
+                    : (targetItem.index_in_transaction || 0) + 1,
 
                 products: [{
                     productId: selectedProductId,
@@ -146,14 +180,6 @@ export function AddItemDialog({ open, onOpenChange, targetItem, group, onSuccess
                     priceAtTransaction: Number(price)
                 }]
             };
-
-            // NOTE: Missing fields like `branchId`, `providerId` might be inside `group` root or `group.items[0]`.
-            // In `StockLogPage`, `group` has `branchName`. `branchId` might be missing if not selected.
-            // I should try to extract them from `group.items[0]` if needed.
-
-            // Enhance payload with fallback lookup
-            if (!payload.branchId) payload.branchId = group.items[0]?.branch_id;
-            if (!payload.providerId) payload.providerId = group.items[0]?.provider_id;
 
             await createMovement.mutateAsync(payload);
             toast.success("Producto añadido exitosamente");
@@ -170,7 +196,7 @@ export function AddItemDialog({ open, onOpenChange, targetItem, group, onSuccess
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-md">
+            <DialogContent className="sm:max-w-3xl">
                 <DialogHeader>
                     <DialogTitle>Añadir producto a remisión {group?.remissionNumber}</DialogTitle>
                 </DialogHeader>

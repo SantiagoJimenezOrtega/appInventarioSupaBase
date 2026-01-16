@@ -31,7 +31,6 @@ export default function SidebarNav() {
         { title: "Cortes de Inventario", href: "/inventory-counts", icon: Calculator },
         { title: "Cartera", href: "/cartera", icon: Wallet },
         { title: "Copiloto IA", href: "/ia-chat", icon: Brain },
-        { title: "Sugerencias IA", href: "/stock-balancing", icon: TrendingUp },
     ];
 
     const [logoUrl, setLogoUrl] = useState<string | null>(null);
